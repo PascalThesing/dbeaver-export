@@ -30,6 +30,8 @@ jobs:
 
       - name: Run all tests against the latest DBeaver release
         run: xvfb-run -a ./mvnw -B -ntp verify
+        env:
+          NO_AT_BRIDGE: "1"
 
   build-against-dbeaver-main:
     runs-on: ubuntu-latest
@@ -77,3 +79,5 @@ jobs:
           xvfb-run -a ./plugin/mvnw -B -ntp verify -f plugin/pom.xml
           -Ddbeaver.target.file=dbeaver-nightly
           -Ddbeaver.repo.url='${{ steps.repo.outputs.url }}'
+        env:
+          NO_AT_BRIDGE: "1"

@@ -29,6 +29,8 @@ jobs:
 
       - name: Build plugin and update site
         run: xvfb-run -a ./mvnw -B -ntp verify
+        env:
+          NO_AT_BRIDGE: "1"
 
       - name: Upload plugin jar
         uses: actions/upload-artifact@v4
