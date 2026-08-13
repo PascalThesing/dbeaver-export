@@ -1,4 +1,5 @@
 name: Nightly compatibility (DBeaver main)
+# Runs nightly against DBeaver main to catch upstream API breakage early.
 
 on:
   schedule:
