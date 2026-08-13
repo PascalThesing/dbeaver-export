@@ -13,6 +13,7 @@
     <extension point="org.jkiss.dbeaver.notifications">
         <notification id="exportnow.armed" name="Headless export armed"/>
         <notification id="exportnow.ok" name="Headless export finished"/>
+        <notification id="exportnow.cancelled" name="Headless export cancelled"/>
         <notification id="exportnow.error" name="Headless export failed"/>
     </extension>
 </plugin>

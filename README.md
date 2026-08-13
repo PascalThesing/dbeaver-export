@@ -29,6 +29,9 @@ SELECT 'script keeps going';
 ```
 
 Execute the script (Alt+X). Both exports run in the background; the script does not stop.
+Running exports appear as "Export data: …" jobs in the status-bar progress area and the
+Progress view, where they can be **cancelled**; cancelling shows an "Export cancelled"
+notification (a partially written output file may remain).
 
 > **Statement-by-statement execution is supported.** Running only the `@exportnow` line
 > (Ctrl+Enter) *arms* the export — you get an "Export armed" notification and an Output-tab

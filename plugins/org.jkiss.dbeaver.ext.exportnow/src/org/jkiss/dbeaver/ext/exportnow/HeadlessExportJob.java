@@ -81,6 +81,17 @@ class HeadlessExportJob extends AbstractJob {
                 null,
                 NOOP_LISTENER,
                 settings);
+            if (monitor.isCanceled()) {
+                if (dataSource != null) {
+                    DBeaverNotifications.showNotification(
+                        dataSource,
+                        "exportnow.cancelled",
+                        "Export cancelled: " + container.getName()
+                            + " — a partially written output file may remain",
+                        DBPMessageType.INFORMATION);
+                }
+                return Status.CANCEL_STATUS;
+            }
             if (dataSource != null) {
                 DBeaverNotifications.showNotification(
                     dataSource,
