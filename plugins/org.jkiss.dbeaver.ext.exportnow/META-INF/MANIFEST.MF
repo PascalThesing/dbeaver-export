@@ -10,5 +10,8 @@ Automatic-Module-Name: org.jkiss.dbeaver.ext.exportnow
 Require-Bundle: org.jkiss.dbeaver.model,
  org.jkiss.dbeaver.model.sql,
  org.jkiss.dbeaver.data.transfer,
- org.eclipse.core.runtime
+ org.eclipse.core.runtime,
+ org.eclipse.ui,
+ org.eclipse.ui.workbench.texteditor,
+ org.eclipse.jface.text
 Import-Package: com.google.gson

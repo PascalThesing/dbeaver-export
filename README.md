@@ -52,6 +52,18 @@ others. Running exports appear as "Export data: …" jobs in the status-bar prog
 and the Background Tasks view, where they can be **cancelled**; cancelling shows an
 "Export cancelled" notification.
 
+### Execution semantics
+
+Exports are **document-driven**: when an `@exportnow` command executes, the editor is
+scanned for export blocks and each one runs headlessly (once per execution):
+
+| How you execute | What exports |
+|---|---|
+| Alt+X (whole script) | all `@exportnow` blocks; queries also run normally in the grid |
+| Ctrl+Enter / new tab, **no selection**, cursor on an `@exportnow` | **all** blocks in the document |
+| Any execution with a **selection** | only blocks whose `@exportnow` is inside the selection |
+| Selection or cursor on a plain statement | just executes — never an export |
+
 The JSON accepts the same `type`, `producer`, `consumer` and `processor` sections as DBeaver's
 built-in [`@export` command](https://dbeaver.com/docs/dbeaver/Export-Command/).
 

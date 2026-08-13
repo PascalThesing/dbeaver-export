@@ -7,7 +7,6 @@
             class="org.jkiss.dbeaver.ext.exportnow.SQLCommandExportNow"
             label="Export now"
             description="Headless export of the next query. Runs in the background without the data transfer wizard, so multiple exports in one script all execute."/>
-        <pragma id="exportnow" class="org.jkiss.dbeaver.ext.exportnow.SQLPragmaExportNow"/>
     </extension>
 
     <extension point="org.jkiss.dbeaver.notifications">

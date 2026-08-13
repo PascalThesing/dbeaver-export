@@ -11,7 +11,6 @@ package org.jkiss.dbeaver.ext.exportnow;
 
 import org.jkiss.dbeaver.model.sql.registry.SQLCommandHandlerDescriptor;
 import org.jkiss.dbeaver.model.sql.registry.SQLCommandsRegistry;
-import org.jkiss.dbeaver.model.sql.registry.SQLPragmaHandlerDescriptor;
 import org.jkiss.dbeaver.tools.transfer.registry.DataTransferRegistry;
 import org.junit.jupiter.api.Test;
 
@@ -31,13 +30,6 @@ public class ExportNowRegistrationTest {
         SQLCommandHandlerDescriptor descriptor = SQLCommandsRegistry.getInstance().getCommandHandler("exportnow");
         assertNotNull(descriptor, "@exportnow command handler not registered");
         assertInstanceOf(SQLCommandExportNow.class, descriptor.createHandler());
-    }
-
-    @Test
-    public void pragmaHandlerRegistered() throws Exception {
-        SQLPragmaHandlerDescriptor descriptor = SQLCommandsRegistry.getInstance().getPragmaHandler("exportnow");
-        assertNotNull(descriptor, "exportnow pragma handler not registered");
-        assertInstanceOf(SQLPragmaExportNow.class, descriptor.createHandler());
     }
 
     @Test

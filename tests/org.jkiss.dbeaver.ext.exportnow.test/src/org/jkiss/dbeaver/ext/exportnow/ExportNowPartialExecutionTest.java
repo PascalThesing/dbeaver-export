@@ -12,7 +12,6 @@ package org.jkiss.dbeaver.ext.exportnow;
 import org.eclipse.core.runtime.IStatus;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
-import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.model.DBPDataSource;
 import org.jkiss.dbeaver.model.data.DBDDataFilter;
 import org.jkiss.dbeaver.model.data.DBDDataReceiver;
@@ -20,7 +19,6 @@ import org.jkiss.dbeaver.model.exec.DBCExecutionSource;
 import org.jkiss.dbeaver.model.exec.DBCSession;
 import org.jkiss.dbeaver.model.exec.DBCStatistics;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
-import org.jkiss.dbeaver.model.sql.SQLPragmaHandler;
 import org.jkiss.dbeaver.model.sql.SQLScriptContext;
 import org.jkiss.dbeaver.model.struct.DBSDataContainer;
 import org.jkiss.dbeaver.model.struct.DBSObject;
@@ -30,16 +28,14 @@ import java.io.StringWriter;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
- * Tests for partial (statement-wise) export execution: an @exportnow command
- * executed on its own arms a pragma in the editor-global script context, a
- * LATER execution (fresh child context, as SQLEditor creates per run) must see
- * it, and the pragma handler must consume only the pragma so the query itself
- * still runs and the script continues.
+ * Tests for the execution-run semantics: exports are document-driven and
+ * scoped to a single run — the per-run data flag dedupes multiple @exportnow
+ * commands in one script run, and nothing leaks into later executions (the
+ * old editor-global pragma leak was the source of "unreliable" exports).
  */
 public class ExportNowPartialExecutionTest {
 
@@ -48,45 +44,17 @@ public class ExportNowPartialExecutionTest {
     }
 
     @Test
-    public void pragmaArmedInOneExecutionIsVisibleInLaterExecution() {
-        // Mirrors SQLEditor: one global context per editor, a fresh child per execution
+    public void runFlagIsPerExecutionNotEditorGlobal() {
+        // The dedup flag must NOT survive into a later execution's fresh child
+        // context — that is exactly the scoping the old pragma got wrong.
         SQLScriptContext global = newContext(null);
-        SQLScriptContext execution1 = newContext(global);
-        execution1.setPragma(SQLCommandExportNow.PRAGMA_EXPORT_NOW, Map.of("type", "csv"));
+        SQLScriptContext run1 = newContext(global);
+        run1.setData("exportnow.executed", Boolean.TRUE);
+        assertEquals(Boolean.TRUE, run1.getData("exportnow.executed"));
 
-        SQLScriptContext execution2 = newContext(global);
-        Map<String, Map<String, Object>> pragmas = execution2.getPragmas();
-        assertTrue(pragmas.containsKey(SQLCommandExportNow.PRAGMA_EXPORT_NOW),
-            "pragma armed in execution 1 must be visible in a later execution of the same editor");
-        assertEquals("csv", pragmas.get(SQLCommandExportNow.PRAGMA_EXPORT_NOW).get("type"));
-    }
-
-    @Test
-    public void pragmaSurvivesMultipleEmptyLinesAndIntermediateExecutions() {
-        // Classic form with any number of empty lines between @exportnow and the
-        // query: blank lines produce no statements, and even further executions
-        // in between don't clear the armed pragma until a query consumes it.
-        SQLScriptContext global = newContext(null);
-        newContext(global).setPragma(SQLCommandExportNow.PRAGMA_EXPORT_NOW, Map.of("type", "csv"));
-
-        SQLScriptContext betweenExecution = newContext(global);
-        assertTrue(betweenExecution.getPragmas().containsKey(SQLCommandExportNow.PRAGMA_EXPORT_NOW));
-
-        SQLScriptContext queryExecution = newContext(global);
-        assertTrue(queryExecution.getPragmas().containsKey(SQLCommandExportNow.PRAGMA_EXPORT_NOW),
-            "pragma must still be armed when the query finally executes");
-    }
-
-    @Test
-    public void pragmaHandlerConsumesOnlyThePragma() throws DBException {
-        int result = new SQLPragmaExportNow().processPragma(
-            new VoidProgressMonitor(),
-            new StubDataContainer(),
-            Map.of("type", "csv"));
-        assertEquals(SQLPragmaHandler.RESULT_CONSUME_PRAGMA, result,
-            "must consume only the pragma: the query still executes and the script continues");
-        assertFalse((result & SQLPragmaHandler.RESULT_CONSUME_QUERY) != 0,
-            "consuming the query would halt the script (the dbeaver#19143 bug)");
+        SQLScriptContext run2 = newContext(global);
+        assertNull(run2.getData("exportnow.executed"),
+            "run-scoped data must not leak into a later execution");
     }
 
     @Test
