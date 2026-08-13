@@ -69,7 +69,6 @@ class HeadlessExportJob extends AbstractJob {
 
     @Override
     protected IStatus run(DBRProgressMonitor monitor) {
-        final DBPDataSource dataSource = container.getDataSource();
         try {
             final DataTransferSettings settings = createSettings();
             settings.loadNodeSettings(monitor);
@@ -82,35 +81,40 @@ class HeadlessExportJob extends AbstractJob {
                 NOOP_LISTENER,
                 settings);
             if (monitor.isCanceled()) {
-                if (dataSource != null) {
-                    DBeaverNotifications.showNotification(
-                        dataSource,
-                        "exportnow.cancelled",
-                        "Export cancelled: " + container.getName()
-                            + " — a partially written output file may remain",
-                        DBPMessageType.INFORMATION);
-                }
+                DBeaverNotifications.showNotification(
+                    "exportnow.cancelled",
+                    "Export cancelled",
+                    describe() + " — a partially written output file may remain",
+                    DBPMessageType.INFORMATION,
+                    null);
                 return Status.CANCEL_STATUS;
             }
-            if (dataSource != null) {
-                DBeaverNotifications.showNotification(
-                    dataSource,
-                    "exportnow.ok",
-                    "Export finished: " + container.getName(),
-                    DBPMessageType.INFORMATION);
-            }
+            DBeaverNotifications.showNotification(
+                "exportnow.ok",
+                "Export finished",
+                describe(),
+                DBPMessageType.INFORMATION,
+                null);
             return Status.OK_STATUS;
         } catch (Throwable e) {
             log.error("Export failed: " + container.getName(), e);
-            if (dataSource != null) {
-                DBeaverNotifications.showNotification(
-                    dataSource,
-                    "exportnow.error",
-                    "Export failed: " + container.getName() + "\n" + e.getMessage(),
-                    DBPMessageType.ERROR);
-            }
+            DBeaverNotifications.showNotification(
+                "exportnow.error",
+                "Export failed",
+                describe() + "\n" + e.getMessage(),
+                DBPMessageType.ERROR,
+                null);
             return GeneralUtils.makeExceptionStatus("Export failed: " + container.getName(), e);
         }
+    }
+
+    /** Query text, prefixed with the datasource name when known. */
+    @NotNull
+    private String describe() {
+        final DBPDataSource dataSource = container.getDataSource();
+        return dataSource == null
+            ? container.getName()
+            : dataSource.getContainer().getName() + ": " + container.getName();
     }
 
     @NotNull
