@@ -1,0 +1,14 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: DBeaver Headless Export Command
+Bundle-SymbolicName: org.jkiss.dbeaver.ext.exportnow;singleton:=true
+Bundle-Version: 1.0.0.qualifier
+Bundle-Vendor: Pascal Thesing
+Bundle-RequiredExecutionEnvironment: JavaSE-21
+Bundle-ActivationPolicy: lazy
+Automatic-Module-Name: org.jkiss.dbeaver.ext.exportnow
+Require-Bundle: org.jkiss.dbeaver.model,
+ org.jkiss.dbeaver.model.sql,
+ org.jkiss.dbeaver.data.transfer,
+ org.eclipse.core.runtime
+Import-Package: com.google.gson

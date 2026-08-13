@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Resolves against a locally built DBeaver main repository.
+     Pass -Ddbeaver.repo.url=file:///path/to/dbeaver/product/community/target/repository -->
+<target name="dbeaver-nightly" sequenceNumber="2">
+    <locations>
+        <location includeAllPlatforms="false" includeConfigurePhase="false" includeMode="planner" includeSource="false" type="InstallableUnit">
+            <repository location="${system_property:dbeaver.repo.url}"/>
+            <unit id="org.jkiss.dbeaver.ce.feature.feature.group" version="0.0.0"/>
+        </location>
+    </locations>
+</target>

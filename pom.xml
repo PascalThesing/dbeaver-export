@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>org.jkiss.dbeaver.ext.exportnow</groupId>
+    <artifactId>parent</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <properties>
+        <tycho.version>4.0.13</tycho.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Overridden by the nightly workflow to point at a locally built DBeaver main repository -->
+        <dbeaver.target.file>dbeaver</dbeaver.target.file>
+    </properties>
+
+    <modules>
+        <module>plugins/org.jkiss.dbeaver.ext.exportnow</module>
+        <module>features/org.jkiss.dbeaver.ext.exportnow.feature</module>
+        <module>releng/repository</module>
+    </modules>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.eclipse.tycho</groupId>
+                <artifactId>tycho-maven-plugin</artifactId>
+                <version>${tycho.version}</version>
+                <extensions>true</extensions>
+            </plugin>
+            <plugin>
+                <groupId>org.eclipse.tycho</groupId>
+                <artifactId>target-platform-configuration</artifactId>
+                <version>${tycho.version}</version>
+                <configuration>
+                    <target>
+                        <file>${maven.multiModuleProjectDirectory}/releng/target-platform/${dbeaver.target.file}.target</file>
+                    </target>
+                    <executionEnvironment>JavaSE-21</executionEnvironment>
+                    <environments>
+                        <environment>
+                            <os>linux</os><ws>gtk</ws><arch>x86_64</arch>
+                        </environment>
+                        <environment>
+                            <os>win32</os><ws>win32</ws><arch>x86_64</arch>
+                        </environment>
+                        <environment>
+                            <os>macosx</os><ws>cocoa</ws><arch>x86_64</arch>
+                        </environment>
+                        <environment>
+                            <os>macosx</os><ws>cocoa</ws><arch>aarch64</arch>
+                        </environment>
+                    </environments>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

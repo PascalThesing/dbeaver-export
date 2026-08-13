@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feature
+      id="org.jkiss.dbeaver.ext.exportnow.feature"
+      label="DBeaver Headless Export Command (@exportnow)"
+      version="1.0.0.qualifier"
+      provider-name="Pascal Thesing">
+
+   <description>
+      Adds the @exportnow SQL control command: headless, parallel data exports
+      with inline queries that do not stop script execution.
+   </description>
+
+   <license url="http://www.apache.org/licenses/LICENSE-2.0">
+      Apache License, Version 2.0
+   </license>
+
+   <plugin id="org.jkiss.dbeaver.ext.exportnow" version="0.0.0"/>
+</feature>

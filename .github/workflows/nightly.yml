@@ -1,0 +1,50 @@
+name: Nightly compatibility (DBeaver main)
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-against-dbeaver-main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: plugin
+
+      - uses: actions/checkout@v4
+        with:
+          repository: dbeaver/dbeaver
+          path: dbeaver
+
+      - uses: actions/checkout@v4
+        with:
+          repository: dbeaver/dbeaver-common
+          path: dbeaver-common
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build DBeaver main p2 repository
+        run: mvn -B -ntp package -DskipTests -f dbeaver/product/aggregate/pom.xml -Pproduct-dbeaver-ce
+
+      - name: Locate built repository
+        id: repo
+        run: |
+          REPO_DIR=$(dirname "$(find "$GITHUB_WORKSPACE/dbeaver/product" -path '*/target/repository/content.*' -print -quit)")
+          if [ -z "$REPO_DIR" ]; then echo "No p2 repository found in DBeaver build output" >&2; exit 1; fi
+          echo "url=file://$REPO_DIR" >> "$GITHUB_OUTPUT"
+          echo "Using repository: $REPO_DIR"
+
+      - name: Build plugin against DBeaver main
+        run: >
+          mvn -B -ntp verify -f plugin/pom.xml
+          -Ddbeaver.target.file=dbeaver-nightly
+          -Ddbeaver.repo.url='${{ steps.repo.outputs.url }}'
