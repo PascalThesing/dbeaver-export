@@ -41,7 +41,16 @@ built-in [`@export` command](https://dbeaver.com/docs/dbeaver/Export-Command/).
 2. In DBeaver: *Help → Install New Software… → Add… → Archive…*, select the zip.
 3. Select *DBeaver Headless Export Command*, finish the wizard, restart DBeaver.
 
-**Manual (dropins):** copy the plugin jar into DBeaver's `dropins/` folder and restart.
+**Headless (p2 director):**
+
+```sh
+dbeaver -application org.eclipse.equinox.p2.director \
+  -repository file:/path/to/extracted-update-site \
+  -installIU org.jkiss.dbeaver.ext.exportnow.feature.feature.group \
+  -nosplash
+```
+
+(Note: DBeaver does not reconcile a `dropins/` folder — use one of the installs above.)
 
 ## Building
 
