@@ -2,6 +2,8 @@ name: Nightly compatibility (DBeaver main)
 # Runs nightly against DBeaver main to catch upstream API breakage early.
 
 on:
+  push:
+    branches: [main, master]
   schedule:
     - cron: '0 3 * * *'
   workflow_dispatch:
@@ -10,6 +12,25 @@ permissions:
   contents: read
 
 jobs:
+  test-against-latest-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Install Xvfb and GTK (for UI tests)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libxtst6 libgtk-3-0t64 || sudo apt-get install -y xvfb libxtst6 libgtk-3-0
+
+      - name: Run all tests against the latest DBeaver release
+        run: xvfb-run -a ./mvnw -B -ntp verify
+
   build-against-dbeaver-main:
     runs-on: ubuntu-latest
     steps:
