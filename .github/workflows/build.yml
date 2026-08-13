@@ -22,8 +22,11 @@ jobs:
           java-version: '21'
           cache: maven
 
+      - name: Install Xvfb (for UI tests)
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
       - name: Build plugin and update site
-        run: ./mvnw -B -ntp verify
+        run: xvfb-run -a ./mvnw -B -ntp verify
 
       - name: Upload plugin jar
         uses: actions/upload-artifact@v4

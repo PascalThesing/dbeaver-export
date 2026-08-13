@@ -43,8 +43,11 @@ jobs:
           echo "url=file://$REPO_DIR" >> "$GITHUB_OUTPUT"
           echo "Using repository: $REPO_DIR"
 
+      - name: Install Xvfb (for UI tests)
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
       - name: Build plugin against DBeaver main
         run: >
-          ./plugin/mvnw -B -ntp verify -f plugin/pom.xml
+          xvfb-run -a ./plugin/mvnw -B -ntp verify -f plugin/pom.xml
           -Ddbeaver.target.file=dbeaver-nightly
           -Ddbeaver.repo.url='${{ steps.repo.outputs.url }}'

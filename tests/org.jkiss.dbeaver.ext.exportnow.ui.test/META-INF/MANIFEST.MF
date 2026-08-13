@@ -1,0 +1,15 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: DBeaver Headless Export Command UI Tests
+Bundle-SymbolicName: org.jkiss.dbeaver.ext.exportnow.ui.test
+Bundle-Version: 1.0.0.qualifier
+Bundle-Vendor: Pascal Thesing
+Bundle-RequiredExecutionEnvironment: JavaSE-21
+Automatic-Module-Name: org.jkiss.dbeaver.ext.exportnow.ui.test
+Require-Bundle: org.jkiss.dbeaver.ext.exportnow,
+ org.jkiss.dbeaver.model,
+ org.jkiss.dbeaver.ui,
+ org.jkiss.dbeaver.ui.app.eclipse,
+ org.eclipse.ui
+Import-Package: org.junit.jupiter.api,
+ org.junit.jupiter.api.function
