@@ -23,7 +23,7 @@ jobs:
           cache: maven
 
       - name: Build plugin and update site
-        run: mvn -B -ntp verify
+        run: ./mvnw -B -ntp verify
 
       - name: Upload plugin jar
         uses: actions/upload-artifact@v4

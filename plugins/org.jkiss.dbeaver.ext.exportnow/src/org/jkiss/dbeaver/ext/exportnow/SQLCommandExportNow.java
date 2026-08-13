@@ -17,7 +17,9 @@ import org.jkiss.dbeaver.model.runtime.DBRProgressMonitor;
 import org.jkiss.dbeaver.model.sql.SQLControlCommand;
 import org.jkiss.dbeaver.model.sql.SQLControlCommandHandler;
 import org.jkiss.dbeaver.model.sql.SQLControlResult;
+import org.jkiss.dbeaver.model.DBPMessageType;
 import org.jkiss.dbeaver.model.sql.SQLScriptContext;
+import org.jkiss.dbeaver.runtime.DBeaverNotifications;
 import org.jkiss.utils.CommonUtils;
 
 import java.io.StringReader;
@@ -59,6 +61,16 @@ public class SQLCommandExportNow implements SQLControlCommandHandler {
         }
 
         scriptContext.setPragma(PRAGMA_EXPORT_NOW, params);
+
+        // A control command execution only shows "Updated rows: -1", so tell the user
+        // explicitly what happened — in the editor's Output tab and as a notification.
+        final String message = "@exportnow armed (type: "
+            + JSONUtils.getString(params, HeadlessExportJob.PARAMETER_TYPE)
+            + "): the next query executed in this editor will be exported in the background. "
+            + "Execute the following query, or the whole script with Alt+X.";
+        scriptContext.getOutputWriter().println(null, message);
+        DBeaverNotifications.showNotification("exportnow.armed", "Export armed", message,
+            DBPMessageType.INFORMATION, null);
 
         return SQLControlResult.success();
     }
