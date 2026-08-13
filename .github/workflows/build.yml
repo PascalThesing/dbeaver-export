@@ -22,8 +22,10 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Install Xvfb (for UI tests)
-        run: sudo apt-get update && sudo apt-get install -y xvfb
+      - name: Install Xvfb and GTK (for UI tests)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libxtst6 libgtk-3-0t64 || sudo apt-get install -y xvfb libxtst6 libgtk-3-0
 
       - name: Build plugin and update site
         run: xvfb-run -a ./mvnw -B -ntp verify

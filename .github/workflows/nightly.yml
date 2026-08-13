@@ -43,8 +43,10 @@ jobs:
           echo "url=file://$REPO_DIR" >> "$GITHUB_OUTPUT"
           echo "Using repository: $REPO_DIR"
 
-      - name: Install Xvfb (for UI tests)
-        run: sudo apt-get update && sudo apt-get install -y xvfb
+      - name: Install Xvfb and GTK (for UI tests)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libxtst6 libgtk-3-0t64 || sudo apt-get install -y xvfb libxtst6 libgtk-3-0
 
       - name: Build plugin against DBeaver main
         run: >
