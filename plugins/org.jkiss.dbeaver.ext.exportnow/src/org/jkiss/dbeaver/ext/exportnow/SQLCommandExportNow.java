@@ -56,7 +56,7 @@ public class SQLCommandExportNow implements SQLControlCommandHandler {
     }
 
     /** Editor scope: full document text plus the selected range (or -1/-1). */
-    record Scope(@NotNull String text, int selectionOffset, int selectionLength) {
+    public record Scope(@NotNull String text, int selectionOffset, int selectionLength) {
     }
 
     @NotNull
@@ -115,7 +115,7 @@ public class SQLCommandExportNow implements SQLControlCommandHandler {
 
     /** Live editor document + selection (UI thread); falls back to the saved source file. */
     @Nullable
-    private static Scope resolveScope(@NotNull SQLScriptContext scriptContext) {
+    public static Scope resolveScope(@Nullable SQLScriptContext scriptContext) {
         final Scope[] result = new Scope[1];
         try {
             PlatformUI.getWorkbench().getDisplay().syncExec(() -> {
@@ -145,7 +145,7 @@ public class SQLCommandExportNow implements SQLControlCommandHandler {
         if (result[0] != null) {
             return result[0];
         }
-        final Path sourceFile = scriptContext.getSourceFile();
+        final Path sourceFile = scriptContext == null ? null : scriptContext.getSourceFile();
         if (sourceFile != null && Files.isReadable(sourceFile)) {
             try {
                 return new Scope(Files.readString(sourceFile), -1, -1);

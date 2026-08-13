@@ -10,6 +10,9 @@ Require-Bundle: org.jkiss.dbeaver.ext.exportnow,
  org.jkiss.dbeaver.model,
  org.jkiss.dbeaver.ui,
  org.jkiss.dbeaver.ui.app.eclipse,
- org.eclipse.ui
+ org.eclipse.ui,
+ org.eclipse.ui.ide,
+ org.eclipse.core.filesystem,
+ org.eclipse.jface.text
 Import-Package: org.junit.jupiter.api,
  org.junit.jupiter.api.function

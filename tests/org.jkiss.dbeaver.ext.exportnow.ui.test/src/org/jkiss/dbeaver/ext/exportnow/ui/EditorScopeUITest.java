@@ -1,0 +1,81 @@
+/*
+ * DBeaver headless export command — UI tests
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ */
+package org.jkiss.dbeaver.ext.exportnow.ui;
+
+import org.eclipse.jface.text.TextSelection;
+import org.eclipse.ui.IEditorPart;
+import org.eclipse.ui.IWorkbenchPage;
+import org.eclipse.ui.PlatformUI;
+import org.eclipse.ui.ide.IDE;
+import org.eclipse.ui.texteditor.ITextEditor;
+import org.jkiss.dbeaver.ext.exportnow.SQLCommandExportNow;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
+/**
+ * UI test for the scope resolution the execution semantics depend on: with a
+ * real editor open in the workbench, {@code resolveScope} must return the live
+ * document text, and the current text selection when one exists.
+ */
+public class EditorScopeUITest {
+
+    private static final String SCRIPT = """
+        @exportnow {"type": "csv"} select * from customers;
+        select 'plain';
+        """;
+
+    private Path file;
+    private IEditorPart editor;
+
+    @AfterEach
+    public void cleanup() throws Exception {
+        if (editor != null) {
+            final IWorkbenchPage page = PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage();
+            page.closeEditor(editor, false);
+        }
+        if (file != null) {
+            Files.deleteIfExists(file);
+        }
+    }
+
+    @Test
+    public void resolvesLiveDocumentAndSelection() throws Exception {
+        file = Files.createTempFile("exportnow-ui", ".sql");
+        Files.writeString(file, SCRIPT);
+
+        final IWorkbenchPage page = PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage();
+        editor = IDE.openEditorOnFileStore(page,
+            org.eclipse.core.filesystem.EFS.getLocalFileSystem().getStore(file.toUri()));
+        final ITextEditor textEditor = editor.getAdapter(ITextEditor.class);
+        assertNotNull(textEditor, "opened editor must adapt to ITextEditor");
+
+        // No selection: scope = whole live document
+        SQLCommandExportNow.Scope scope = SQLCommandExportNow.resolveScope(null);
+        assertNotNull(scope, "scope must resolve from the active editor");
+        assertEquals(SCRIPT, scope.text());
+        assertEquals(-1, scope.selectionOffset(), "no selection expected");
+
+        // With a selection: scope carries the exact selected range
+        final int selStart = SCRIPT.indexOf("select 'plain'");
+        final int selLength = "select 'plain';".length();
+        textEditor.getSelectionProvider().setSelection(new TextSelection(selStart, selLength));
+        scope = SQLCommandExportNow.resolveScope(null);
+        assertNotNull(scope);
+        assertEquals(SCRIPT, scope.text());
+        assertEquals(selStart, scope.selectionOffset());
+        assertEquals(selLength, scope.selectionLength());
+    }
+}
