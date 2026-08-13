@@ -62,6 +62,22 @@ public class ExportNowPartialExecutionTest {
     }
 
     @Test
+    public void pragmaSurvivesMultipleEmptyLinesAndIntermediateExecutions() {
+        // Classic form with any number of empty lines between @exportnow and the
+        // query: blank lines produce no statements, and even further executions
+        // in between don't clear the armed pragma until a query consumes it.
+        SQLScriptContext global = newContext(null);
+        newContext(global).setPragma(SQLCommandExportNow.PRAGMA_EXPORT_NOW, Map.of("type", "csv"));
+
+        SQLScriptContext betweenExecution = newContext(global);
+        assertTrue(betweenExecution.getPragmas().containsKey(SQLCommandExportNow.PRAGMA_EXPORT_NOW));
+
+        SQLScriptContext queryExecution = newContext(global);
+        assertTrue(queryExecution.getPragmas().containsKey(SQLCommandExportNow.PRAGMA_EXPORT_NOW),
+            "pragma must still be armed when the query finally executes");
+    }
+
+    @Test
     public void pragmaHandlerConsumesOnlyThePragma() throws DBException {
         int result = new SQLPragmaExportNow().processPragma(
             new VoidProgressMonitor(),

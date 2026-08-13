@@ -20,24 +20,37 @@ This plugin adds a new SQL control command **`@exportnow`** that:
 
 ## Usage
 
+**Inline form** — the query is part of the statement; executing it (Ctrl+Enter or in a
+script) starts the export immediately:
+
 ```sql
-@exportnow {"type": "csv", "consumer": {"outputFolder": "/data/export", "outputFilePattern": "customers"}};
-SELECT * FROM customers;
+@exportnow {"type": "csv", "consumer": {"outputFolder": "/data/export", "outputFilePattern": "customers"}} SELECT * FROM customers;
+```
+
+For long queries use the multiline command block (`@@ … @@`):
+
+```sql
+@@exportnow {"type": "csv", "consumer": {"outputFolder": "/data/export", "outputFilePattern": "orders"}}
+SELECT o.*
+FROM orders o
+@@
+```
+
+**Classic form** (like the built-in `@export`) — the JSON alone on its line; the **next
+executed query** (any number of lines below) is exported:
+
+```sql
 @exportnow {"type": "csv", "consumer": {"outputFolder": "/data/export", "outputFilePattern": "orders"}};
+
 SELECT * FROM orders;
 SELECT 'script keeps going';
 ```
 
-Execute the script (Alt+X). Both exports run in the background; the script does not stop.
-Running exports appear as "Export data: …" jobs in the status-bar progress area and the
-Progress view, where they can be **cancelled**; cancelling shows an "Export cancelled"
-notification (a partially written output file may remain).
-
-> **Statement-by-statement execution is supported.** Running only the `@exportnow` line
-> (Ctrl+Enter) *arms* the export — you get an "Export armed" notification and an Output-tab
-> message — and the **next query executed in that editor** (Ctrl+Enter, execute-in-new-tab,
-> or a selection with Alt+X) is exported. The "-1 rows" grid is just DBeaver's standard
-> display for control commands; the notifications carry the real feedback.
+Note the mandatory space after `@exportnow`. Exports run in the background — the script
+does not stop, multiple exports run in parallel, and a failing export doesn't affect the
+others. Running exports appear as "Export data: …" jobs in the status-bar progress area
+and the Background Tasks view, where they can be **cancelled**; cancelling shows an
+"Export cancelled" notification.
 
 The JSON accepts the same `type`, `producer`, `consumer` and `processor` sections as DBeaver's
 built-in [`@export` command](https://dbeaver.com/docs/dbeaver/Export-Command/).
