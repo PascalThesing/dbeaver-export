@@ -26,6 +26,34 @@
                     <includes>
                         <include>**/*Test.java</include>
                     </includes>
+                    <!-- felix.scr + the DBeaver Eclipse application give the
+                         platform a real home, silencing 'No DBeaver application
+                         found' noise during test discovery; org.junit satisfies
+                         the vintage engine so it stops warning -->
+                    <bundleStartLevel>
+                        <bundle>
+                            <id>org.apache.felix.scr</id>
+                            <level>2</level>
+                            <autoStart>true</autoStart>
+                        </bundle>
+                    </bundleStartLevel>
+                    <dependencies>
+                        <dependency>
+                            <type>eclipse-plugin</type>
+                            <artifactId>org.apache.felix.scr</artifactId>
+                            <version>0.0.0</version>
+                        </dependency>
+                        <dependency>
+                            <type>eclipse-plugin</type>
+                            <artifactId>org.jkiss.dbeaver.ui.app.eclipse</artifactId>
+                            <version>0.0.0</version>
+                        </dependency>
+                        <dependency>
+                            <type>eclipse-plugin</type>
+                            <artifactId>org.junit</artifactId>
+                            <version>0.0.0</version>
+                        </dependency>
+                    </dependencies>
                 </configuration>
             </plugin>
         </plugins>

@@ -41,6 +41,11 @@
                             <artifactId>org.apache.felix.scr</artifactId>
                             <version>0.0.0</version>
                         </dependency>
+                        <dependency>
+                            <type>eclipse-plugin</type>
+                            <artifactId>org.junit</artifactId>
+                            <version>0.0.0</version>
+                        </dependency>
                     </dependencies>
                 </configuration>
             </plugin>

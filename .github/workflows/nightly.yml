@@ -60,8 +60,10 @@ jobs:
       - name: Locate built repository
         id: repo
         run: |
-          REPO_DIR=$(dirname "$(find "$GITHUB_WORKSPACE/dbeaver/product/repositories" -path '*/target/repository/content.*' -print -quit)")
-          if [ -z "$REPO_DIR" ]; then echo "No p2 repository found in DBeaver build output" >&2; exit 1; fi
+          REPO_DIR="$GITHUB_WORKSPACE/dbeaver/product/repositories/org.jkiss.dbeaver.ce.repository/target/repository"
+          if [ ! -f "$REPO_DIR/content.jar" ] && [ ! -f "$REPO_DIR/content.xml" ]; then
+            echo "CE p2 repository not found at $REPO_DIR" >&2; exit 1
+          fi
           echo "url=file://$REPO_DIR" >> "$GITHUB_OUTPUT"
           echo "Using repository: $REPO_DIR"
 

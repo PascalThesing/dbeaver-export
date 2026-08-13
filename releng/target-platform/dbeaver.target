@@ -21,6 +21,7 @@
             <unit id="junit-jupiter-api" version="5.14.4"/>
             <unit id="org.eclipse.equinox.launcher" version="0.0.0"/>
             <unit id="org.apache.felix.scr" version="0.0.0"/>
+            <unit id="org.junit" version="0.0.0"/>
         </location>
     </locations>
 </target>
