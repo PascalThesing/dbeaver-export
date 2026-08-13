@@ -72,13 +72,32 @@ class HeadlessExportJob extends AbstractJob {
         try {
             final DataTransferSettings settings = createSettings();
             settings.loadNodeSettings(monitor);
+            // The transfer runs in nested jobs whose failures don't surface as
+            // exceptions — they are reported through the listener's taskFinished.
+            final Throwable[] transferError = new Throwable[1];
             new DTTaskHandlerTransfer().executeWithSettings(
                 (fork, cancelable, runnable) -> runnable.run(monitor),
                 null,
                 Locale.getDefault(),
                 log,
                 null,
-                NOOP_LISTENER,
+                new DBTTaskExecutionListener() {
+                    @Override
+                    public void taskStarted(DBTTask task) {
+                    }
+
+                    @Override
+                    public void taskFinished(DBTTask task, Object result, Throwable error, Object settings) {
+                        transferError[0] = error;
+                    }
+
+                    @Override
+                    public void subTaskFinished(DBTTask task, Throwable error, Object settings) {
+                        if (error != null) {
+                            transferError[0] = error;
+                        }
+                    }
+                },
                 settings);
             if (monitor.isCanceled()) {
                 DBeaverNotifications.showNotification(
@@ -88,6 +107,9 @@ class HeadlessExportJob extends AbstractJob {
                     DBPMessageType.INFORMATION,
                     null);
                 return Status.CANCEL_STATUS;
+            }
+            if (transferError[0] != null) {
+                throw transferError[0];
             }
             DBeaverNotifications.showNotification(
                 "exportnow.ok",
@@ -173,17 +195,4 @@ class HeadlessExportJob extends AbstractJob {
         return properties;
     }
 
-    private static final DBTTaskExecutionListener NOOP_LISTENER = new DBTTaskExecutionListener() {
-        @Override
-        public void taskStarted(DBTTask task) {
-        }
-
-        @Override
-        public void taskFinished(DBTTask task, Object result, Throwable error, Object settings) {
-        }
-
-        @Override
-        public void subTaskFinished(DBTTask task, Throwable error, Object settings) {
-        }
-    };
 }
