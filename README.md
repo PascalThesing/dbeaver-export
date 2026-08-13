@@ -77,7 +77,10 @@ The target platform resolves against the DBeaver release update site
 
 ## CI
 
-- **build.yml** — builds on every push/PR, uploads the jar and update-site zip as workflow
-  artifacts, and attaches both to the GitHub Release on `v*` tags.
+- **build.yml** — builds on every push/PR **and runs the Tycho integration tests**
+  (`tests/org.jkiss.dbeaver.ext.exportnow.test`: JUnit 5 inside the OSGi runtime — extension
+  registration, JSON/parameter parsing, and the DBeaver data-transfer registry ids we rely on),
+  uploads the jar and update-site zip as workflow artifacts, and attaches both to the GitHub
+  Release on `v*` tags.
 - **nightly.yml** — every night (and on demand) builds DBeaver **main** from source and compiles
   this plugin against it, catching upstream API breakage early.

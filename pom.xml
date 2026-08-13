@@ -20,6 +20,7 @@
         <module>plugins/org.jkiss.dbeaver.ext.exportnow</module>
         <module>features/org.jkiss.dbeaver.ext.exportnow.feature</module>
         <module>releng/repository</module>
+        <module>tests/org.jkiss.dbeaver.ext.exportnow.test</module>
     </modules>
 
     <build>

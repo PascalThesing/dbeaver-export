@@ -14,6 +14,8 @@
             <unit id="org.eclipse.equinox.registry" version="0.0.0"/>
             <unit id="org.eclipse.equinox.common" version="0.0.0"/>
             <unit id="org.eclipse.core.jobs" version="0.0.0"/>
+            <unit id="junit-jupiter-api" version="5.14.4"/>
+            <unit id="org.eclipse.equinox.launcher" version="0.0.0"/>
         </location>
     </locations>
 </target>
