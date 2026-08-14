@@ -9,24 +9,44 @@
  */
 package org.jkiss.dbeaver.ext.exportnow;
 
+import org.eclipse.jface.text.Document;
+import org.eclipse.jface.text.IDocumentPartitioner;
+import org.eclipse.jface.text.rules.FastPartitioner;
 import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
+import org.jkiss.dbeaver.Log;
+import org.jkiss.dbeaver.model.DBPDataSource;
+import org.jkiss.dbeaver.model.preferences.DBPPreferenceStore;
+import org.jkiss.dbeaver.model.sql.SQLControlCommand;
+import org.jkiss.dbeaver.model.sql.SQLDialect;
+import org.jkiss.dbeaver.model.sql.SQLQuery;
+import org.jkiss.dbeaver.model.sql.SQLScriptElement;
+import org.jkiss.dbeaver.model.sql.SQLSyntaxManager;
+import org.jkiss.dbeaver.model.sql.SQLUtils;
+import org.jkiss.dbeaver.model.sql.parser.SQLParserContext;
+import org.jkiss.dbeaver.model.sql.parser.SQLParserPartitions;
+import org.jkiss.dbeaver.model.sql.SQLPartitionScanner;
+import org.jkiss.dbeaver.model.sql.parser.SQLRuleManager;
+import org.jkiss.dbeaver.model.sql.parser.SQLScriptParser;
+import org.jkiss.dbeaver.model.impl.sql.BasicSQLDialect;
+import org.jkiss.dbeaver.runtime.DBWorkbench;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Pure text scanner for {@code @exportnow} blocks in a SQL script:
- * <ul>
- * <li>inline: {@code @exportnow {json} select ...;} on one line</li>
- * <li>multiline: {@code @@exportnow {json} <sql...> @@}</li>
- * <li>classic: {@code @exportnow {json};} followed (after any blank/comment
- *     lines) by the next statement up to an unquoted {@code ;}</li>
- * </ul>
+ * Finds {@code @exportnow} blocks in a SQL script using DBeaver's own script
+ * parser, which understands dialect string escapes, line and block comments,
+ * custom delimiters, {@code BEGIN/END} blocks — and both command forms:
+ * single-line {@code @exportnow ...} and multiline {@code @@exportnow ... @@}.
+ * The query of a "classic" block (no inline SQL) is the next parsed statement.
  */
 final class ExportBlockScanner {
 
-    /** One export block: raw command parameter (JSON [+ inline sql]) and the resolved SQL. */
-    record Block(int offset, @NotNull String parameter, @NotNull String sql) {
+    private static final Log log = Log.getLog(ExportBlockScanner.class);
+
+    /** One export block: command offset, parsed settings (+ optional inline SQL) and resolved SQL. */
+    record Block(int offset, @NotNull ExportCommandParser.ParsedCommand command, @NotNull String sql) {
     }
 
     private ExportBlockScanner() {
@@ -34,8 +54,8 @@ final class ExportBlockScanner {
 
     /** Scans the whole text. */
     @NotNull
-    static List<Block> findBlocks(@NotNull String text) {
-        return findBlocks(text, 0, text.length());
+    static List<Block> findBlocks(@Nullable DBPDataSource dataSource, @NotNull String text) {
+        return findBlocks(dataSource, text, 0, text.length());
     }
 
     /**
@@ -44,104 +64,75 @@ final class ExportBlockScanner {
      * after a control command anyway, so the command position is what counts).
      */
     @NotNull
-    static List<Block> findBlocks(@NotNull String text, int offset, int length) {
+    static List<Block> findBlocks(@Nullable DBPDataSource dataSource, @NotNull String text, int offset, int length) {
         final List<Block> blocks = new ArrayList<>();
         final int rangeEnd = offset + length;
-        int pos = 0;
-        while (pos < text.length()) {
-            final int lineEnd = endOfLine(text, pos);
-            final String line = text.substring(pos, lineEnd);
-            final String trimmed = line.stripLeading();
-            final int cmdOffset = pos + (line.length() - trimmed.length());
 
-            if (trimmed.startsWith("@@exportnow ") || trimmed.startsWith("@@exportnow\t")) {
-                // multiline block: up to the closing @@
-                final int bodyStart = cmdOffset + "@@exportnow ".length();
-                final int close = text.indexOf("@@", bodyStart);
-                final int bodyEnd = close < 0 ? text.length() : close;
-                if (cmdOffset >= offset && cmdOffset < rangeEnd) {
-                    addBlock(blocks, text, cmdOffset, text.substring(bodyStart, bodyEnd), -1);
-                }
-                pos = (close < 0 ? text.length() : close + 2);
+        // Parse the whole document: a range-bounded parse would cut off the query
+        // following a command near the end of a selection.
+        final List<SQLScriptElement> elements;
+        final SQLDialect dialect = dataSource == null ? BasicSQLDialect.INSTANCE : dataSource.getSQLDialect();
+        try {
+            final SQLParserContext parserContext = createParserContext(dataSource, dialect, text);
+            elements = SQLScriptParser.extractScriptQueries(parserContext, 0, text.length(), true, false, false);
+        } catch (Throwable e) {
+            log.warn("@exportnow: can't parse script", e);
+            return blocks;
+        }
+
+        for (int i = 0; i < elements.size(); i++) {
+            if (!(elements.get(i) instanceof SQLControlCommand command)
+                || !SQLCommandExportNow.COMMAND_ID.equals(command.getCommandId())) {
                 continue;
             }
-            if (trimmed.startsWith("@exportnow ") || trimmed.startsWith("@exportnow\t")) {
-                final String parameter = trimmed.substring("@exportnow ".length());
-                if (cmdOffset >= offset && cmdOffset < rangeEnd) {
-                    addBlock(blocks, text, cmdOffset, parameter, lineEnd);
-                }
+            if (command.getOffset() < offset || command.getOffset() >= rangeEnd) {
+                continue;
             }
-            pos = lineEnd + 1;
+            final ExportCommandParser.ParsedCommand parsed;
+            try {
+                parsed = ExportCommandParser.parseParameters(command.getParameter());
+            } catch (Exception e) {
+                log.warn("@exportnow: skipping malformed block at offset " + command.getOffset()
+                    + ": " + e.getMessage());
+                continue;
+            }
+            String sql = parsed.sql();
+            if (sql == null
+                && i + 1 < elements.size()
+                && elements.get(i + 1) instanceof SQLQuery nextQuery) {
+                // the parsed element may keep leading comment lines - not needed for the export
+                sql = SQLUtils.stripComments(dialect, nextQuery.getText()).trim();
+            }
+            if (sql != null && !sql.isBlank()) {
+                blocks.add(new Block(command.getOffset(), parsed, sql));
+            }
         }
         return blocks;
     }
 
-    /**
-     * parameter = text after the command word. If it contains inline SQL after the
-     * JSON, that's the query; otherwise (classic form) the next statement after
-     * {@code searchFrom} is the query. Blocks without a resolvable query are skipped.
-     */
-    private static void addBlock(List<Block> blocks, String text, int cmdOffset, String parameter, int searchFrom) {
-        String sql = null;
-        try {
-            final var parsed = SQLCommandExportNow.parseParameters(parameter);
-            sql = parsed.sql();
-        } catch (Exception e) {
-            return; // malformed block: the command handler reports it when executed
+    @NotNull
+    private static SQLParserContext createParserContext(
+        @Nullable DBPDataSource dataSource,
+        @NotNull SQLDialect dialect,
+        @NotNull String text
+    ) {
+        DBPPreferenceStore preferences = dataSource == null
+            ? null : dataSource.getContainer().getPreferenceStore();
+        if (preferences == null) {
+            preferences = DBWorkbench.getPlatform().getPreferenceStore();
         }
-        if (sql == null && searchFrom >= 0) {
-            sql = nextStatement(text, searchFrom);
-        }
-        if (sql != null && !sql.isEmpty()) {
-            blocks.add(new Block(cmdOffset, parameter, sql));
-        }
-    }
-
-    /** Next statement after pos: skips blank lines and line comments, reads to an unquoted ';'. */
-    private static String nextStatement(String text, int pos) {
-        int i = pos;
-        while (i < text.length()) {
-            final int lineEnd = endOfLine(text, i);
-            final String trimmed = text.substring(i, lineEnd).trim();
-            if (trimmed.isEmpty() || trimmed.startsWith("--")) {
-                i = lineEnd + 1;
-                continue;
-            }
-            if (trimmed.startsWith("@")) {
-                return null; // next block starts before any statement
-            }
-            break;
-        }
-        if (i >= text.length()) {
-            return null;
-        }
-        // read to unquoted ';'
-        boolean inSingle = false;
-        boolean inDouble = false;
-        for (int j = i; j < text.length(); j++) {
-            final char c = text.charAt(j);
-            if (inSingle) {
-                if (c == '\'') {
-                    inSingle = false;
-                }
-            } else if (inDouble) {
-                if (c == '"') {
-                    inDouble = false;
-                }
-            } else if (c == '\'') {
-                inSingle = true;
-            } else if (c == '"') {
-                inDouble = true;
-            } else if (c == ';') {
-                return text.substring(i, j).trim();
-            }
-        }
-        final String rest = text.substring(i).trim();
-        return rest.isEmpty() ? null : rest;
-    }
-
-    private static int endOfLine(String text, int from) {
-        final int nl = text.indexOf('\n', from);
-        return nl < 0 ? text.length() : nl;
+        final SQLSyntaxManager syntaxManager = new SQLSyntaxManager();
+        syntaxManager.init(dialect, preferences);
+        final SQLRuleManager ruleManager = new SQLRuleManager(syntaxManager);
+        ruleManager.loadRules(dataSource, false);
+        final Document document = new Document(text);
+        final IDocumentPartitioner partitioner = new FastPartitioner(
+            new SQLPartitionScanner(dataSource, dialect, ruleManager),
+            SQLParserPartitions.SQL_CONTENT_TYPES);
+        partitioner.connect(document);
+        document.setDocumentPartitioner(SQLParserPartitions.SQL_PARTITIONING, partitioner);
+        final SQLParserContext context = new SQLParserContext(dataSource, syntaxManager, ruleManager, document);
+        context.setPreferenceStore(preferences);
+        return context;
     }
 }

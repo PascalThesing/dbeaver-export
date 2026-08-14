@@ -15,7 +15,7 @@ import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.ide.IDE;
 import org.eclipse.ui.texteditor.ITextEditor;
-import org.jkiss.dbeaver.ext.exportnow.SQLCommandExportNow;
+import org.jkiss.dbeaver.ext.exportnow.EditorScope;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -63,7 +63,7 @@ public class EditorScopeUITest {
         assertNotNull(textEditor, "opened editor must adapt to ITextEditor");
 
         // No selection: scope = whole live document
-        SQLCommandExportNow.Scope scope = SQLCommandExportNow.resolveScope(null);
+        EditorScope.Scope scope = EditorScope.resolve(null, null);
         assertNotNull(scope, "scope must resolve from the active editor");
         assertEquals(SCRIPT, scope.text());
         assertEquals(-1, scope.selectionOffset(), "no selection expected");
@@ -72,7 +72,7 @@ public class EditorScopeUITest {
         final int selStart = SCRIPT.indexOf("select 'plain'");
         final int selLength = "select 'plain';".length();
         textEditor.getSelectionProvider().setSelection(new TextSelection(selStart, selLength));
-        scope = SQLCommandExportNow.resolveScope(null);
+        scope = EditorScope.resolve(null, null);
         assertNotNull(scope);
         assertEquals(SCRIPT, scope.text());
         assertEquals(selStart, scope.selectionOffset());
