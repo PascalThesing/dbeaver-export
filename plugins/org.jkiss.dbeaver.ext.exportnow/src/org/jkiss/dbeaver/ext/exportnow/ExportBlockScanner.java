@@ -49,12 +49,11 @@ final class ExportBlockScanner {
     record Block(int offset, @NotNull ExportCommandParser.ParsedCommand command, @NotNull String sql) {
     }
 
-    private ExportBlockScanner() {
-    }
+    private final ExportCommandParser commandParser = new ExportCommandParser();
 
     /** Scans the whole text. */
     @NotNull
-    static List<Block> findBlocks(@Nullable DBPDataSource dataSource, @NotNull String text) {
+    List<Block> findBlocks(@Nullable DBPDataSource dataSource, @NotNull String text) {
         return findBlocks(dataSource, text, 0, text.length());
     }
 
@@ -64,7 +63,7 @@ final class ExportBlockScanner {
      * after a control command anyway, so the command position is what counts).
      */
     @NotNull
-    static List<Block> findBlocks(@Nullable DBPDataSource dataSource, @NotNull String text, int offset, int length) {
+    List<Block> findBlocks(@Nullable DBPDataSource dataSource, @NotNull String text, int offset, int length) {
         final List<Block> blocks = new ArrayList<>();
         final int rangeEnd = offset + length;
 
@@ -90,7 +89,7 @@ final class ExportBlockScanner {
             }
             final ExportCommandParser.ParsedCommand parsed;
             try {
-                parsed = ExportCommandParser.parseParameters(command.getParameter());
+                parsed = commandParser.parseParameters(command.getParameter());
             } catch (Exception e) {
                 log.warn("@exportnow: skipping malformed block at offset " + command.getOffset()
                     + ": " + e.getMessage());
@@ -111,7 +110,7 @@ final class ExportBlockScanner {
     }
 
     @NotNull
-    private static SQLParserContext createParserContext(
+    private SQLParserContext createParserContext(
         @Nullable DBPDataSource dataSource,
         @NotNull SQLDialect dialect,
         @NotNull String text

@@ -37,9 +37,6 @@ public final class EditorScope {
     public record Scope(@NotNull String text, int selectionOffset, int selectionLength) {
     }
 
-    private EditorScope() {
-    }
-
     /**
      * Live editor document + selection (fetched on the UI thread), falling back to the
      * saved source file. {@code commandParameter}, when given, guards against resolving
@@ -47,7 +44,7 @@ public final class EditorScope {
      * command's parameter (the user switched tabs mid-run), it is ignored.
      */
     @Nullable
-    public static Scope resolve(@Nullable SQLScriptContext scriptContext, @Nullable String commandParameter) {
+    public Scope resolve(@Nullable SQLScriptContext scriptContext, @Nullable String commandParameter) {
         Scope scope = resolveActiveEditor();
         if (scope != null
             && commandParameter != null && !commandParameter.isBlank()
@@ -70,7 +67,7 @@ public final class EditorScope {
     }
 
     @Nullable
-    private static Scope resolveActiveEditor() {
+    private Scope resolveActiveEditor() {
         if (!PlatformUI.isWorkbenchRunning()) {
             return null;
         }
@@ -104,7 +101,7 @@ public final class EditorScope {
     }
 
     @NotNull
-    private static String firstLine(@NotNull String text) {
+    private String firstLine(@NotNull String text) {
         final int nl = text.indexOf('\n');
         return (nl < 0 ? text : text.substring(0, nl)).trim();
     }

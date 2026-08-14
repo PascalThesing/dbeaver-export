@@ -140,7 +140,7 @@ class HeadlessExportJob extends AbstractJob {
     }
 
     @NotNull
-    private DataTransferSettings createSettings() throws DBException {
+    DataTransferSettings createSettings() throws DBException {
         final String type = JSONUtils.getString(parameters, PARAMETER_TYPE);
         final DataTransferRegistry registry = DataTransferRegistry.getInstance();
         final DataTransferNodeDescriptor producerNode = registry.getNodeById(PRODUCER_NODE_ID);
@@ -172,7 +172,7 @@ class HeadlessExportJob extends AbstractJob {
     }
 
     @NotNull
-    private static Map<String, Object> createProcessorSettings(
+    private Map<String, Object> createProcessorSettings(
         @NotNull DataTransferProcessorDescriptor processor,
         @NotNull Map<String, Object> parameters
     ) {

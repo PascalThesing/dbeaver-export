@@ -52,6 +52,24 @@ public class EditorScopeUITest {
     }
 
     @Test
+    public void wrongEditorGuardFallsBackWhenCommandNotInDocument() throws Exception {
+        file = Files.createTempFile("exportnow-guard", ".sql");
+        Files.writeString(file, SCRIPT);
+        final IWorkbenchPage page = PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage();
+        editor = IDE.openEditorOnFileStore(page,
+            org.eclipse.core.filesystem.EFS.getLocalFileSystem().getStore(file.toUri()));
+
+        final EditorScope scope = new EditorScope();
+        // Command parameter contained in the open document: editor scope resolves
+        assertNotNull(scope.resolve(null, "{\"type\": \"csv\"} select * from customers;"),
+            "matching command must resolve the active editor");
+        // Parameter from a DIFFERENT script (user switched tabs): editor is ignored,
+        // and with no source-file fallback the scope must be null
+        assertEquals(null, scope.resolve(null, "{\"type\": \"xlsx\"} select * from elsewhere_entirely;"),
+            "non-matching command must not use the active editor");
+    }
+
+    @Test
     public void resolvesLiveDocumentAndSelection() throws Exception {
         file = Files.createTempFile("exportnow-ui", ".sql");
         Files.writeString(file, SCRIPT);
@@ -63,7 +81,7 @@ public class EditorScopeUITest {
         assertNotNull(textEditor, "opened editor must adapt to ITextEditor");
 
         // No selection: scope = whole live document
-        EditorScope.Scope scope = EditorScope.resolve(null, null);
+        EditorScope.Scope scope = new EditorScope().resolve(null, null);
         assertNotNull(scope, "scope must resolve from the active editor");
         assertEquals(SCRIPT, scope.text());
         assertEquals(-1, scope.selectionOffset(), "no selection expected");
@@ -72,7 +90,7 @@ public class EditorScopeUITest {
         final int selStart = SCRIPT.indexOf("select 'plain'");
         final int selLength = "select 'plain';".length();
         textEditor.getSelectionProvider().setSelection(new TextSelection(selStart, selLength));
-        scope = EditorScope.resolve(null, null);
+        scope = new EditorScope().resolve(null, null);
         assertNotNull(scope);
         assertEquals(SCRIPT, scope.text());
         assertEquals(selStart, scope.selectionOffset());

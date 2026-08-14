@@ -40,6 +40,10 @@ public class SQLCommandExportNow implements SQLControlCommandHandler {
 
     private static final String RUN_FLAG = "exportnow.executed";
 
+    private final ExportCommandParser commandParser = new ExportCommandParser();
+    private final EditorScope editorScope = new EditorScope();
+    private final ExportBlockScanner blockScanner = new ExportBlockScanner();
+
     @NotNull
     @Override
     public SQLControlResult handleCommand(
@@ -48,7 +52,7 @@ public class SQLCommandExportNow implements SQLControlCommandHandler {
         @NotNull SQLScriptContext scriptContext
     ) throws DBException {
         // Validate this command's own JSON regardless of dedup, so syntax errors surface
-        final ExportCommandParser.ParsedCommand parsed = ExportCommandParser.parseParameters(command.getParameter());
+        final ExportCommandParser.ParsedCommand parsed = commandParser.parseParameters(command.getParameter());
 
         // Only the first @exportnow of an execution run performs the scan
         if (Boolean.TRUE.equals(scriptContext.getData(RUN_FLAG))) {
@@ -56,7 +60,7 @@ public class SQLCommandExportNow implements SQLControlCommandHandler {
         }
         scriptContext.setData(RUN_FLAG, Boolean.TRUE);
 
-        final EditorScope.Scope scope = EditorScope.resolve(scriptContext, command.getParameter());
+        final EditorScope.Scope scope = editorScope.resolve(scriptContext, command.getParameter());
         if (scope == null) {
             // No document reachable: export at least this command's inline SQL
             if (parsed.sql() != null) {
@@ -70,8 +74,8 @@ public class SQLCommandExportNow implements SQLControlCommandHandler {
         final DBPDataSource dataSource = scriptContext.getExecutionContext() == null
             ? null : scriptContext.getExecutionContext().getDataSource();
         final List<ExportBlockScanner.Block> blocks = scope.selectionOffset() >= 0
-            ? ExportBlockScanner.findBlocks(dataSource, scope.text(), scope.selectionOffset(), scope.selectionLength())
-            : ExportBlockScanner.findBlocks(dataSource, scope.text());
+            ? blockScanner.findBlocks(dataSource, scope.text(), scope.selectionOffset(), scope.selectionLength())
+            : blockScanner.findBlocks(dataSource, scope.text());
         if (blocks.isEmpty() && parsed.sql() != null) {
             scheduleExport(scriptContext, parsed.params(), parsed.sql());
             return SQLControlResult.success();
@@ -82,7 +86,7 @@ public class SQLCommandExportNow implements SQLControlCommandHandler {
         return SQLControlResult.success();
     }
 
-    private static void scheduleExport(
+    private void scheduleExport(
         @NotNull SQLScriptContext scriptContext,
         @NotNull Map<String, Object> params,
         @NotNull String sql

@@ -28,8 +28,8 @@ import java.util.Map;
  */
 final class ExportCommandParser {
 
-    private static final Gson GSON = new Gson();
-    private static final JsonFactory JSON_FACTORY = new JsonFactory();
+    private final Gson gson = new Gson();
+    private final JsonFactory jsonFactory = new JsonFactory();
 
     private static final String SYNTAX_ERROR =
         "Invalid syntax. Use '@exportnow {\"type\": <type>, \"producer\": {...}, \"consumer\": {...}, \"processor\": {...}} [<query>]'";
@@ -38,15 +38,12 @@ final class ExportCommandParser {
     record ParsedCommand(@NotNull Map<String, Object> params, @Nullable String sql) {
     }
 
-    private ExportCommandParser() {
-    }
-
     /**
      * Strips trailing statement separators (the SQL parser includes the trailing
      * {@code ;} in the parameter) and validates the mandatory type.
      */
     @NotNull
-    static ParsedCommand parseParameters(@Nullable String parameter) throws DBException {
+    ParsedCommand parseParameters(@Nullable String parameter) throws DBException {
         final String text = CommonUtils.notEmpty(parameter).trim();
         final int jsonEnd = findJsonEnd(text);
         if (jsonEnd < 0) {
@@ -60,7 +57,7 @@ final class ExportCommandParser {
 
         final Map<String, Object> params;
         try {
-            params = JSONUtils.parseMap(GSON, new StringReader(json));
+            params = JSONUtils.parseMap(gson, new StringReader(json));
         } catch (Exception e) {
             throw new DBException(SYNTAX_ERROR, e);
         }
@@ -71,11 +68,11 @@ final class ExportCommandParser {
     }
 
     /** Returns the index just past the closing brace of the leading JSON object, or -1. */
-    private static int findJsonEnd(@NotNull String text) {
+    private int findJsonEnd(@NotNull String text) {
         if (!text.startsWith("{")) {
             return -1;
         }
-        try (com.fasterxml.jackson.core.JsonParser parser = JSON_FACTORY.createParser(text)) {
+        try (com.fasterxml.jackson.core.JsonParser parser = jsonFactory.createParser(text)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 return -1;
             }
