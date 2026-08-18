@@ -49,7 +49,7 @@ public final class EditorScope {
         if (scope != null
             && commandParameter != null && !commandParameter.isBlank()
             && !scope.text().contains(firstLine(commandParameter))) {
-            log.debug("Active editor does not contain the executing @exportnow command - ignoring it");
+            log.warn("@exportnow: active editor does not contain the executing command - ignoring it");
             scope = null;
         }
         if (scope != null) {
@@ -94,8 +94,8 @@ public final class EditorScope {
                 }
                 result[0] = new Scope(document.get(), selOffset, selLength);
             });
-        } catch (Throwable e) {
-            log.debug("Can't access editor document, falling back to source file", e);
+        } catch (Exception e) {
+            log.warn("@exportnow: can't access editor document, falling back to source file", e);
         }
         return result[0];
     }

@@ -107,5 +107,7 @@ public class ExportNowParameterTest {
     public void rejectsMissingJsonObject() {
         assertThrows(DBException.class, () ->
             parser.parseParameters("select * from customers;"));
+        assertThrows(DBException.class, () -> parser.parseParameters(null));
+        assertThrows(DBException.class, () -> parser.parseParameters("   "));
     }
 }

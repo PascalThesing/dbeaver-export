@@ -65,8 +65,10 @@ public class ExportNowNotificationTest {
     }
 
     @AfterEach
-    public void restoreNotifications() {
-        // Restore the default console handler so other tests are unaffected
+    public void muteNotifications() {
+        // DBeaverNotifications has no getter, so the original handler cannot be
+        // restored - install a no-op, muting notifications for the rest of the
+        // runtime (a deliberate, runtime-wide side effect)
         DBeaverNotifications.setHandler(new DBeaverNotifications.NotificationHandler() {
             @Override
             public void sendNotification(DBPDataSource dataSource, String id, String text, DBPMessageType messageType, Runnable feedback) {
@@ -79,11 +81,15 @@ public class ExportNowNotificationTest {
     }
 
     @Test
-    public void failedExportNotifiesFailureNotSuccess() {
+    public void failedExportNotifiesFailureNotSuccess() throws Exception {
+        // unwritable regardless of uid (works under act/containers running as root)
+        java.nio.file.Path unwritable = java.nio.file.Files.createTempFile("exportnow-blocker", "");
         HeadlessExportJob job = new HeadlessExportJob(new EmptyContainer(), Map.of(
             "type", "csv",
-            "consumer", Map.of("outputFolder", "/root/forbidden-exportnow-test", "outputFilePattern", "x")));
+            "consumer", Map.of(
+                "outputFolder", unwritable.resolve("sub").toString(), "outputFilePattern", "x")));
         IStatus status = job.run(new VoidProgressMonitor());
+        java.nio.file.Files.deleteIfExists(unwritable);
 
         assertEquals(IStatus.ERROR, status.getSeverity(), "failed transfer must yield an error status");
         assertTrue(notifications.stream().anyMatch(n -> n.id().equals("exportnow.error")),
@@ -104,13 +110,45 @@ public class ExportNowNotificationTest {
                 "consumer", Map.of("outputFolder", outDir.toString(), "outputFilePattern", "empty")));
             IStatus status = job.run(new VoidProgressMonitor());
 
+            // The null-datasource container cannot fully succeed in the real transfer;
+            // the invariant is: one export = exactly one notification, never a false success
             long total = notifications.stream()
                 .filter(n -> n.id().startsWith("exportnow.")).count();
             assertEquals(1, total, "exactly one notification per export, got: " + notifications);
-            if (status.getSeverity() != IStatus.OK) {
+            if (!status.isOK()) {
                 assertFalse(notifications.stream().anyMatch(n -> n.id().equals("exportnow.ok")),
                     "a non-OK export must never show 'Export finished', got: " + notifications);
             }
+        } finally {
+            try (var files = java.nio.file.Files.list(outDir)) {
+                for (java.nio.file.Path p : files.toList()) {
+                    java.nio.file.Files.deleteIfExists(p);
+                }
+            }
+            java.nio.file.Files.deleteIfExists(outDir);
+        }
+    }
+
+    @Test
+    public void cancelledExportNotifiesCancellationNotSuccess() throws Exception {
+        java.nio.file.Path outDir = java.nio.file.Files.createTempDirectory("exportnow-cancel");
+        try {
+            HeadlessExportJob job = new HeadlessExportJob(new EmptyContainer(), Map.of(
+                "type", "csv",
+                "consumer", Map.of("outputFolder", outDir.toString(), "outputFilePattern", "c")));
+            VoidProgressMonitor cancelled = new VoidProgressMonitor() {
+                @Override
+                public boolean isCanceled() {
+                    return true;
+                }
+            };
+            IStatus status = job.run(cancelled);
+
+            assertEquals(IStatus.CANCEL, status.getSeverity(), "cancelled export must yield CANCEL status");
+            assertTrue(notifications.stream().anyMatch(n -> n.id().equals("exportnow.cancelled")),
+                "'Export cancelled' notification must be shown, got: " + notifications);
+            assertFalse(notifications.stream().anyMatch(n -> n.id().equals("exportnow.ok")),
+                "a cancelled export must never show 'Export finished', got: " + notifications);
         } finally {
             try (var files = java.nio.file.Files.list(outDir)) {
                 for (java.nio.file.Path p : files.toList()) {

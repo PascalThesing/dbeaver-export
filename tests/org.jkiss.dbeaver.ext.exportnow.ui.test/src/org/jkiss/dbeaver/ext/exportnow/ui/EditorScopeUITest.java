@@ -24,6 +24,7 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * UI test for the scope resolution the execution semantics depend on: with a
@@ -65,7 +66,7 @@ public class EditorScopeUITest {
             "matching command must resolve the active editor");
         // Parameter from a DIFFERENT script (user switched tabs): editor is ignored,
         // and with no source-file fallback the scope must be null
-        assertEquals(null, scope.resolve(null, "{\"type\": \"xlsx\"} select * from elsewhere_entirely;"),
+        assertNull(scope.resolve(null, "{\"type\": \"xlsx\"} select * from elsewhere_entirely;"),
             "non-matching command must not use the active editor");
     }
 

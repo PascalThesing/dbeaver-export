@@ -61,7 +61,7 @@ class HeadlessExportJob extends AbstractJob {
     private final Map<String, Object> parameters;
 
     HeadlessExportJob(@NotNull DBSDataContainer container, @NotNull Map<String, Object> parameters) {
-        super("Export data: " + container.getName());
+        super("Export data: " + CommonUtils.truncateString(container.getName(), 60));
         this.container = container;
         this.parameters = parameters;
         setUser(true);
@@ -72,9 +72,15 @@ class HeadlessExportJob extends AbstractJob {
         try {
             final DataTransferSettings settings = createSettings();
             settings.loadNodeSettings(monitor);
+            // Settings/pipe setup failures are collected in the state, not thrown -
+            // without this check a misconfigured export would run on defaults
+            if (!settings.getState().getLoadErrors().isEmpty()) {
+                throw settings.getState().getLoadErrors().get(0);
+            }
             // The transfer runs in nested jobs whose failures don't surface as
-            // exceptions — they are reported through the listener's taskFinished.
-            final Throwable[] transferError = new Throwable[1];
+            // exceptions — they are reported through the listener callbacks.
+            final java.util.concurrent.atomic.AtomicReference<Throwable> transferError =
+                new java.util.concurrent.atomic.AtomicReference<>();
             new DTTaskHandlerTransfer().executeWithSettings(
                 (fork, cancelable, runnable) -> runnable.run(monitor),
                 null,
@@ -88,13 +94,15 @@ class HeadlessExportJob extends AbstractJob {
 
                     @Override
                     public void taskFinished(DBTTask task, Object result, Throwable error, Object settings) {
-                        transferError[0] = error;
+                        if (error != null) {
+                            transferError.compareAndSet(null, error);
+                        }
                     }
 
                     @Override
                     public void subTaskFinished(DBTTask task, Throwable error, Object settings) {
                         if (error != null) {
-                            transferError[0] = error;
+                            transferError.compareAndSet(null, error);
                         }
                     }
                 },
@@ -108,8 +116,8 @@ class HeadlessExportJob extends AbstractJob {
                     null);
                 return Status.CANCEL_STATUS;
             }
-            if (transferError[0] != null) {
-                throw transferError[0];
+            if (transferError.get() != null) {
+                throw transferError.get();
             }
             DBeaverNotifications.showNotification(
                 "exportnow.ok",
@@ -119,14 +127,14 @@ class HeadlessExportJob extends AbstractJob {
                 null);
             return Status.OK_STATUS;
         } catch (Throwable e) {
-            log.error("Export failed: " + container.getName(), e);
+            log.error("Export failed: " + describe(), e);
             DBeaverNotifications.showNotification(
                 "exportnow.error",
                 "Export failed",
-                describe() + "\n" + e.getMessage(),
+                describe() + "\n" + GeneralUtils.getExceptionMessage(e),
                 DBPMessageType.ERROR,
                 null);
-            return GeneralUtils.makeExceptionStatus("Export failed: " + container.getName(), e);
+            return GeneralUtils.makeExceptionStatus("Export failed: " + describe(), e);
         }
     }
 
@@ -134,9 +142,8 @@ class HeadlessExportJob extends AbstractJob {
     @NotNull
     private String describe() {
         final DBPDataSource dataSource = container.getDataSource();
-        return dataSource == null
-            ? container.getName()
-            : dataSource.getContainer().getName() + ": " + container.getName();
+        final String name = CommonUtils.truncateString(container.getName(), 60);
+        return dataSource == null ? name : dataSource.getContainer().getName() + ": " + name;
     }
 
     @NotNull
@@ -147,7 +154,11 @@ class HeadlessExportJob extends AbstractJob {
         final DataTransferNodeDescriptor consumerNode = registry.getNodeById(CONSUMER_NODE_ID);
         final DataTransferProcessorDescriptor processor = registry.getProcessor(PROCESSOR_ID_PREFIX + type);
         if (processor == null) {
-            throw new DBException("Can't find processor of type '" + type + "'");
+            final String available = consumerNode.getAvailableProcessors(java.util.List.of(container)).stream()
+                .map(p -> p.getId().replaceFirst("^stream\\.", ""))
+                .sorted()
+                .collect(java.util.stream.Collectors.joining(", "));
+            throw new DBException("Can't find processor of type '" + type + "'. Available types: " + available);
         }
 
         return new DataTransferSettings(
@@ -160,15 +171,30 @@ class HeadlessExportJob extends AbstractJob {
                 DTConstants.PROP_PROCESSORS_LIST, Map.of(
                     processor.getFullId(), createProcessorSettings(processor, parameters)
                 ),
-                producerNode.getNodeClass().getSimpleName(), JSONUtils.getObject(parameters, DTConstants.PROP_PRODUCER_TYPE),
+                producerNode.getNodeClass().getSimpleName(), createProducerSettings(parameters),
                 consumerNode.getNodeClass().getSimpleName(), JSONUtils.getObject(parameters, DTConstants.PROP_CONSUMER_TYPE)
             ),
             new DataTransferState(),
-            true,
-            true,
-            false,
-            false
+            true,   // selectDefaultNodes
+            true,   // isExport
+            false,  // isExitingTask
+            false   // isTaskRunning
         );
+    }
+
+    /**
+     * Producer settings with DBeaver's own default restored: absent boolean keys are
+     * read as {@code false} by DatabaseProducerSettings.loadSettings, which would
+     * silently turn off {@code openNewConnections} (class default {@code true}) and
+     * make all concurrent exports share a single JDBC connection. An explicit user
+     * value always wins.
+     */
+    @NotNull
+    private Map<String, Object> createProducerSettings(@NotNull Map<String, Object> parameters) {
+        final Map<String, Object> producer =
+            new HashMap<>(JSONUtils.getObject(parameters, DTConstants.PROP_PRODUCER_TYPE));
+        producer.putIfAbsent("openNewConnections", true);
+        return producer;
     }
 
     @NotNull

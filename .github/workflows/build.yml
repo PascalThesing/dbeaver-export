@@ -10,9 +10,30 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: exportnow
+        ports:
+          - 15432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      EXPORTNOW_PG_URL: jdbc:postgresql://localhost:15432/postgres
+      EXPORTNOW_PG_USER: postgres
+      EXPORTNOW_PG_PASSWORD: exportnow
     steps:
       - uses: actions/checkout@v4
 
@@ -31,6 +52,15 @@ jobs:
         run: xvfb-run -a ./mvnw -B -ntp verify
         env:
           NO_AT_BRIDGE: "1"
+
+      - name: Upload test diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-diagnostics
+          path: |
+            tests/**/target/surefire-reports/**
+            tests/**/target/work/data/.metadata/.log
 
       - name: Upload plugin jar
         uses: actions/upload-artifact@v4

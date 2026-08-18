@@ -220,6 +220,18 @@ public class ExportBlockScannerTest {
     }
 
     @Test
+    public void blockWithMissingTypeIsSkipped() {
+        List<ExportBlockScanner.Block> blocks = scanner.findBlocks(null, """
+            @exportnow {"consumer": {"outputFilePattern": "x"}};
+            select * from t1;
+            @exportnow {"type": "csv"};
+            select * from t2;
+            """);
+        assertEquals(1, blocks.size(), "block without mandatory type must be skipped");
+        assertEquals("select * from t2", blocks.get(0).sql());
+    }
+
+    @Test
     public void malformedBlockIsSkipped() {
         List<ExportBlockScanner.Block> blocks = scanner.findBlocks(null, """
             @exportnow {broken json;

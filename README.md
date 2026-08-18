@@ -86,6 +86,47 @@ dbeaver -application org.eclipse.equinox.p2.director \
 
 (Note: DBeaver does not reconcile a `dropins/` folder — use one of the installs above.)
 
+## Performance & concurrency
+
+The plugin is built for batch use: 50+ concurrent exports and 500,000+ rows × 100+ columns per
+export are covered by integration tests against a real PostgreSQL (see below). What you should
+know for production databases (PostgreSQL/Oracle/DB2):
+
+- **Connections**: each export runs on its own connection (`producer.openNewConnections` — the
+  plugin restores DBeaver's default `true`, which DBeaver's JSON parsing would otherwise silently
+  drop for absent keys; set it to `false` explicitly only if you must share the session).
+  Embedded drivers (SQLite/H2) always share the session.
+- **Cap parallelism for shared servers**: add top-level `"maxJobCount": N` to the first
+  `@exportnow` block — the run's exports are then executed at most N at a time (same semantics
+  as DBeaver's data-transfer `maxJobCount`). Absent = unlimited. 4–16 is a good starting range;
+  50 unbounded parallel queries can degrade a production server for other users.
+- **No pre-count**: the plugin leaves `producer.queryRowCount` off, so no extra `COUNT(*)` runs
+  before large exports.
+- **Keep the fast defaults**: `splitOutFiles=false` (splitting flushes every row),
+  `compressResults=false`, empty `lineFeedEscapeString`, `extractType=SINGLE_QUERY`.
+- **Tuning knobs**: `producer.fetchSize` (default 10,000) and `consumer.valueFormat` exist, but
+  the measurements below show DBeaver's defaults are already the fastest for wide text exports —
+  change them only with evidence from your own workload.
+- **Unique file names**: at high concurrency give each block its own
+  `consumer.outputFilePattern`; identical names within the same minute otherwise rely on
+  DBeaver's conflict renaming.
+- **Heap**: DBeaver ships with `-Xmx1024m` in `dbeaver.ini`; raise it (e.g. `-Xmx4g`) for heavy
+  parallel export sessions.
+
+Measured on the reference setup (4-core Linux, PostgreSQL 16 in a local container,
+500,000 rows × 110 columns = 561 MB CSV, exported from a materialized table):
+
+| Settings | Duration | Throughput |
+|---|---|---|
+| defaults | **27.0 s** | **20.8 MB/s (~18,500 rows/s)** |
+| `producer.fetchSize=50000` | 29.3 s | no gain — keep the default |
+| `consumer.valueFormat=NATIVE` | 26.3–31.4 s | within run variance — keep the default |
+| 55 concurrent exports (2,000 rows × 110 cols each) | 27 s total | all complete, per-export connections verified |
+
+Note when benchmarking yourself: if the query *generates* its rows (e.g. `generate_series` with
+per-row functions), you are measuring your database server, not the export — the identical
+md5-generating query was 4.6× slower entirely due to server-side row computation.
+
 ## Building
 
 Requires JDK 21 and Maven 3.9+:

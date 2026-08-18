@@ -74,10 +74,31 @@ public class HeadlessExportSettingsTest {
     }
 
     @Test
-    public void missingSectionsYieldEmptySettingsNotErrors() throws Exception {
+    public void missingSectionsYieldDefaultsNotErrors() throws Exception {
         DataTransferSettings settings = job("{\"type\": \"json\"}").createSettings();
         DataTransferRegistry registry = DataTransferRegistry.getInstance();
         assertTrue(settings.getNodeSettingsMap(registry.getNodeById("stream_consumer")).isEmpty());
-        assertTrue(settings.getNodeSettingsMap(registry.getNodeById("database_producer")).isEmpty());
+        // absent producer section still carries the restored DBeaver default:
+        // loadSettings would otherwise read the missing key as false
+        assertEquals(Map.of("openNewConnections", true),
+            settings.getNodeSettingsMap(registry.getNodeById("database_producer")));
+    }
+
+    @Test
+    public void processorPropertiesConvertedAndUnknownKeysSkipped() throws Exception {
+        DataTransferSettings settings = job(
+            "{\"type\": \"csv\", \"processor\": {\"delimiter\": \";\", \"bogusKey\": 1}}").createSettings();
+        Map<String, Object> csv = settings.getProcessorProperties();
+        assertEquals(";", csv.get("delimiter"));
+        assertTrue(!csv.containsKey("bogusKey"), "unknown processor keys must be skipped");
+    }
+
+    @Test
+    public void explicitOpenNewConnectionsWins() throws Exception {
+        DataTransferSettings settings = job(
+            "{\"type\": \"csv\", \"producer\": {\"openNewConnections\": false}}").createSettings();
+        DataTransferRegistry registry = DataTransferRegistry.getInstance();
+        assertEquals(Boolean.FALSE,
+            settings.getNodeSettingsMap(registry.getNodeById("database_producer")).get("openNewConnections"));
     }
 }

@@ -74,7 +74,7 @@ final class ExportBlockScanner {
         try {
             final SQLParserContext parserContext = createParserContext(dataSource, dialect, text);
             elements = SQLScriptParser.extractScriptQueries(parserContext, 0, text.length(), true, false, false);
-        } catch (Throwable e) {
+        } catch (Exception e) {
             log.warn("@exportnow: can't parse script", e);
             return blocks;
         }
@@ -93,6 +93,12 @@ final class ExportBlockScanner {
             } catch (Exception e) {
                 log.warn("@exportnow: skipping malformed block at offset " + command.getOffset()
                     + ": " + e.getMessage());
+                org.jkiss.dbeaver.runtime.DBeaverNotifications.showNotification(
+                    "exportnow.error",
+                    "Export block skipped",
+                    "Malformed @exportnow block at offset " + command.getOffset() + ": " + e.getMessage(),
+                    org.jkiss.dbeaver.model.DBPMessageType.WARNING,
+                    null);
                 continue;
             }
             String sql = parsed.sql();

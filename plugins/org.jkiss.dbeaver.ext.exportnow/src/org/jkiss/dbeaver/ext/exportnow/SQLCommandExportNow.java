@@ -9,7 +9,9 @@
  */
 package org.jkiss.dbeaver.ext.exportnow;
 
+import org.eclipse.core.runtime.jobs.JobGroup;
 import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.DBPDataSource;
@@ -20,6 +22,7 @@ import org.jkiss.dbeaver.model.sql.SQLControlResult;
 import org.jkiss.dbeaver.model.sql.SQLQuery;
 import org.jkiss.dbeaver.model.sql.SQLScriptContext;
 import org.jkiss.dbeaver.model.sql.data.SQLQueryDataContainer;
+import org.jkiss.utils.CommonUtils;
 
 import java.util.List;
 import java.util.Map;
@@ -38,6 +41,7 @@ public class SQLCommandExportNow implements SQLControlCommandHandler {
 
     private static final Log log = Log.getLog(SQLCommandExportNow.class);
 
+    /** Identity of the scope already exported in this execution run (re-arms when the document/selection changes). */
     private static final String RUN_FLAG = "exportnow.executed";
 
     private final ExportCommandParser commandParser = new ExportCommandParser();
@@ -53,49 +57,81 @@ public class SQLCommandExportNow implements SQLControlCommandHandler {
     ) throws DBException {
         // Validate this command's own JSON regardless of dedup, so syntax errors surface
         final ExportCommandParser.ParsedCommand parsed = commandParser.parseParameters(command.getParameter());
-
-        // Only the first @exportnow of an execution run performs the scan
-        if (Boolean.TRUE.equals(scriptContext.getData(RUN_FLAG))) {
-            return SQLControlResult.success();
+        if (scriptContext.getExecutionContext() == null) {
+            throw new DBException("@exportnow: no active database connection");
         }
-        scriptContext.setData(RUN_FLAG, Boolean.TRUE);
 
         final EditorScope.Scope scope = editorScope.resolve(scriptContext, command.getParameter());
+
+        // Only the first @exportnow of an execution run performs the scan. The flag stores
+        // the scope identity so a reused script context re-arms when the document changes.
+        final Object runId = scope == null ? Boolean.TRUE
+            : scope.text().length() + ":" + scope.text().hashCode() + ":" + scope.selectionOffset() + ":" + scope.selectionLength();
+        if (runId.equals(scriptContext.getData(RUN_FLAG))) {
+            return SQLControlResult.success();
+        }
+        scriptContext.setData(RUN_FLAG, runId);
+
         if (scope == null) {
             // No document reachable: export at least this command's inline SQL
             if (parsed.sql() != null) {
-                scheduleExport(scriptContext, parsed.params(), parsed.sql());
+                scheduleExport(scriptContext, parsed.params(), parsed.sql(), null);
             } else {
                 throw new DBException("@exportnow: cannot determine the query to export (no editor document available)");
             }
             return SQLControlResult.success();
         }
 
-        final DBPDataSource dataSource = scriptContext.getExecutionContext() == null
-            ? null : scriptContext.getExecutionContext().getDataSource();
+        final DBPDataSource dataSource = dataSource(scriptContext);
         final List<ExportBlockScanner.Block> blocks = scope.selectionOffset() >= 0
             ? blockScanner.findBlocks(dataSource, scope.text(), scope.selectionOffset(), scope.selectionLength())
             : blockScanner.findBlocks(dataSource, scope.text());
-        if (blocks.isEmpty() && parsed.sql() != null) {
-            scheduleExport(scriptContext, parsed.params(), parsed.sql());
-            return SQLControlResult.success();
+        if (blocks.isEmpty()) {
+            if (parsed.sql() != null) {
+                scheduleExport(scriptContext, parsed.params(), parsed.sql(), null);
+                return SQLControlResult.success();
+            }
+            throw new DBException("@exportnow: no query found to export");
         }
+        final JobGroup group = createJobGroup(parsed.params(), blocks.size());
         for (ExportBlockScanner.Block block : blocks) {
-            scheduleExport(scriptContext, block.command().params(), block.sql());
+            scheduleExport(scriptContext, block.command().params(), block.sql(), group);
         }
         return SQLControlResult.success();
+    }
+
+    /**
+     * DBeaver's own maxJobCount semantics: cap how many exports of this run execute
+     * simultaneously (protects production servers). The key is read from the JSON of
+     * the command that triggered the run, not per block; absent = unlimited.
+     */
+    @Nullable
+    JobGroup createJobGroup(@NotNull Map<String, Object> params, int blockCount) {
+        final int maxJobCount = CommonUtils.toInt(params.get("maxJobCount"), 0);
+        return maxJobCount > 0 && blockCount > 1
+            ? new JobGroup("@exportnow exports", maxJobCount, blockCount)
+            : null;
+    }
+
+    @Nullable
+    private DBPDataSource dataSource(@NotNull SQLScriptContext scriptContext) {
+        return scriptContext.getExecutionContext() == null
+            ? null : scriptContext.getExecutionContext().getDataSource();
     }
 
     private void scheduleExport(
         @NotNull SQLScriptContext scriptContext,
         @NotNull Map<String, Object> params,
-        @NotNull String sql
+        @NotNull String sql,
+        @Nullable JobGroup group
     ) {
-        final SQLQuery query = new SQLQuery(
-            scriptContext.getExecutionContext() == null ? null : scriptContext.getExecutionContext().getDataSource(),
-            sql);
+        final SQLQuery query = new SQLQuery(dataSource(scriptContext), sql);
         final SQLQueryDataContainer container =
             new SQLQueryDataContainer(scriptContext::getExecutionContext, query, scriptContext, log);
-        new HeadlessExportJob(container, params).schedule();
+        final HeadlessExportJob job = new HeadlessExportJob(container, params);
+        if (group != null) {
+            job.setJobGroup(group);
+        }
+        job.schedule();
     }
 }

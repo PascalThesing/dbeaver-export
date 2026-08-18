@@ -8,6 +8,7 @@
             <unit id="org.jkiss.dbeaver.model" version="0.0.0"/>
             <unit id="org.jkiss.dbeaver.model.sql" version="0.0.0"/>
             <unit id="org.jkiss.dbeaver.data.transfer" version="0.0.0"/>
+            <unit id="org.jkiss.dbeaver.ext.postgresql" version="0.0.0"/>
             <unit id="com.google.gson" version="0.0.0"/>
             <unit id="org.jkiss.dbeaver.core" version="0.0.0"/>
             <unit id="org.jkiss.dbeaver.ui" version="0.0.0"/>
@@ -34,6 +35,24 @@
                     <groupId>com.fasterxml.jackson.core</groupId>
                     <artifactId>jackson-core</artifactId>
                     <version>2.19.0</version>
+                    <type>jar</type>
+                </dependency>
+                <dependency>
+                    <groupId>com.google.guava</groupId>
+                    <artifactId>guava</artifactId>
+                    <version>33.4.8-jre</version>
+                    <type>jar</type>
+                </dependency>
+                <dependency>
+                    <groupId>com.google.guava</groupId>
+                    <artifactId>failureaccess</artifactId>
+                    <version>1.0.3</version>
+                    <type>jar</type>
+                </dependency>
+                <dependency>
+                    <groupId>commons-codec</groupId>
+                    <artifactId>commons-codec</artifactId>
+                    <version>1.18.0</version>
                     <type>jar</type>
                 </dependency>
             </dependencies>

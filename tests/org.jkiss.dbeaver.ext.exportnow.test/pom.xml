@@ -13,6 +13,10 @@
     <version>1.0.0-SNAPSHOT</version>
     <packaging>eclipse-test-plugin</packaging>
 
+    <properties>
+        <exportnow.perf></exportnow.perf>
+    </properties>
+
     <build>
         <plugins>
             <plugin>
@@ -23,6 +27,9 @@
                     <useUIHarness>false</useUIHarness>
                     <useUIThread>false</useUIThread>
                     <providerHint>junit5</providerHint>
+                    <systemProperties>
+                        <exportnow.perf>${exportnow.perf}</exportnow.perf>
+                    </systemProperties>
                     <includes>
                         <include>**/*Test.java</include>
                     </includes>
@@ -51,6 +58,11 @@
                         <dependency>
                             <type>eclipse-plugin</type>
                             <artifactId>org.junit</artifactId>
+                            <version>0.0.0</version>
+                        </dependency>
+                        <dependency>
+                            <type>eclipse-plugin</type>
+                            <artifactId>org.jkiss.dbeaver.ext.postgresql</artifactId>
                             <version>0.0.0</version>
                         </dependency>
                     </dependencies>
