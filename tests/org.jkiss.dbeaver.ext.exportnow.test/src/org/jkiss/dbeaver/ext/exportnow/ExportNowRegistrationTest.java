@@ -9,34 +9,36 @@
  */
 package org.jkiss.dbeaver.ext.exportnow;
 
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
 import org.jkiss.dbeaver.model.sql.registry.SQLCommandHandlerDescriptor;
 import org.jkiss.dbeaver.model.sql.registry.SQLCommandsRegistry;
 import org.jkiss.dbeaver.tools.transfer.registry.DataTransferRegistry;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-
 /**
- * Integration tests running inside the OSGi runtime against the real DBeaver
- * bundles: our extensions are registered and the data-transfer registry ids
- * this plugin depends on still exist in the DBeaver version under test.
- * The latter is the nightly-compatibility canary against DBeaver main.
+ * Integration tests running inside the OSGi runtime against the real DBeaver bundles: our
+ * extensions are registered and the data-transfer registry ids this plugin depends on still exist
+ * in the DBeaver version under test. The latter is the nightly-compatibility canary against DBeaver
+ * main.
  */
 public class ExportNowRegistrationTest {
 
-    @Test
-    public void commandHandlerRegistered() throws Exception {
-        SQLCommandHandlerDescriptor descriptor = SQLCommandsRegistry.getInstance().getCommandHandler("exportnow");
-        assertNotNull(descriptor, "@exportnow command handler not registered");
-        assertInstanceOf(SQLCommandExportNow.class, descriptor.createHandler());
-    }
+  @Test
+  public void commandHandlerRegistered() throws Exception {
+    SQLCommandHandlerDescriptor descriptor =
+        SQLCommandsRegistry.getInstance().getCommandHandler("exportnow");
+    assertNotNull(descriptor, "@exportnow command handler not registered");
+    assertInstanceOf(SQLCommandExportNow.class, descriptor.createHandler());
+  }
 
-    @Test
-    public void dataTransferRegistryIdsExist() {
-        DataTransferRegistry registry = DataTransferRegistry.getInstance();
-        assertNotNull(registry.getNodeById("database_producer"), "database_producer node missing");
-        assertNotNull(registry.getNodeById("stream_consumer"), "stream_consumer node missing");
-        assertNotNull(registry.getProcessor("stream_consumer:stream.csv"), "csv stream processor missing");
-    }
+  @Test
+  public void dataTransferRegistryIdsExist() {
+    DataTransferRegistry registry = DataTransferRegistry.getInstance();
+    assertNotNull(registry.getNodeById("database_producer"), "database_producer node missing");
+    assertNotNull(registry.getNodeById("stream_consumer"), "stream_consumer node missing");
+    assertNotNull(
+        registry.getProcessor("stream_consumer:stream.csv"), "csv stream processor missing");
+  }
 }

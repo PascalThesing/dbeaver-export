@@ -9,48 +9,49 @@
  */
 package org.jkiss.dbeaver.ext.exportnow;
 
-import org.jkiss.dbeaver.model.sql.SQLScriptContext;
-import org.junit.jupiter.api.Test;
-
-import java.io.Writer;
-import java.nio.file.Files;
-import java.nio.file.Path;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import java.io.Writer;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import org.jkiss.dbeaver.model.sql.SQLScriptContext;
+import org.junit.jupiter.api.Test;
+
 /**
- * Headless tests for EditorScope: no workbench is running here, so resolution
- * must fall back to the script's saved source file (or nothing).
+ * Headless tests for EditorScope: no workbench is running here, so resolution must fall back to the
+ * script's saved source file (or nothing).
  */
 public class EditorScopeFallbackTest {
 
-    private final EditorScope editorScope = new EditorScope();
+  private final EditorScope editorScope = new EditorScope();
 
-    @Test
-    public void fallsBackToSourceFileWithoutWorkbenchEditor() throws Exception {
-        final Path sourceFile = Files.createTempFile("exportnow-scope", ".sql");
-        try {
-            final String script = "@exportnow {\"type\": \"csv\"};\nselect 1;\n";
-            Files.writeString(sourceFile, script);
-            final SQLScriptContext scriptContext =
-                new SQLScriptContext(null, () -> null, sourceFile, Writer.nullWriter(), null);
+  @Test
+  public void fallsBackToSourceFileWithoutWorkbenchEditor() throws Exception {
+    final Path sourceFile = Files.createTempFile("exportnow-scope", ".sql");
+    try {
+      final String script = "@exportnow {\"type\": \"csv\"};\nselect 1;\n";
+      Files.writeString(sourceFile, script);
+      final SQLScriptContext scriptContext =
+          new SQLScriptContext(null, () -> null, sourceFile, Writer.nullWriter(), null);
 
-            final EditorScope.Scope scope = editorScope.resolve(scriptContext, null);
-            assertNotNull(scope, "source-file fallback must resolve");
-            assertEquals(script, scope.text());
-            assertEquals(-1, scope.selectionOffset(), "file fallback has no selection");
-            assertEquals(-1, scope.selectionLength());
-        } finally {
-            Files.deleteIfExists(sourceFile);
-        }
+      final EditorScope.Scope scope = editorScope.resolve(scriptContext, null).orElse(null);
+      assertNotNull(scope, "source-file fallback must resolve");
+      assertEquals(script, scope.text());
+      assertEquals(
+          new TextRange(0, script.length()), scope.range(), "file fallback has no selection");
+    } finally {
+      Files.deleteIfExists(sourceFile);
     }
+  }
 
-    @Test
-    public void noEditorAndNoSourceFileYieldsNull() {
-        assertNull(editorScope.resolve(null, null));
-        assertNull(editorScope.resolve(
-            new SQLScriptContext(null, () -> null, null, Writer.nullWriter(), null), null));
-    }
+  @Test
+  public void noEditorAndNoSourceFileYieldsNull() {
+    assertNull(editorScope.resolve(null, null).orElse(null));
+    assertNull(
+        editorScope
+            .resolve(new SQLScriptContext(null, () -> null, null, Writer.nullWriter(), null), null)
+            .orElse(null));
+  }
 }

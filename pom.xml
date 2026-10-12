@@ -11,6 +11,8 @@
 
     <properties>
         <tycho.version>4.0.13</tycho.version>
+        <spotless.version>3.10.4</spotless.version>
+        <google-java-format.version>1.36.0</google-java-format.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- Overridden by the nightly workflow to point at a locally built DBeaver main repository -->
         <dbeaver.target.file>dbeaver</dbeaver.target.file>
@@ -26,6 +28,33 @@
 
     <build>
         <plugins>
+            <!-- google-java-format; `./mvnw spotless:apply` fixes, `verify` fails on unformatted code -->
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>${spotless.version}</version>
+                <configuration>
+                    <java>
+                        <!-- Tycho bundles keep their sources in src/, not src/main/java -->
+                        <includes>
+                            <include>src/**/*.java</include>
+                        </includes>
+                        <googleJavaFormat>
+                            <version>${google-java-format.version}</version>
+                            <style>GOOGLE</style>
+                            <reflowLongStrings>true</reflowLongStrings>
+                        </googleJavaFormat>
+                    </java>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <phase>verify</phase>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.eclipse.tycho</groupId>
                 <artifactId>tycho-maven-plugin</artifactId>
