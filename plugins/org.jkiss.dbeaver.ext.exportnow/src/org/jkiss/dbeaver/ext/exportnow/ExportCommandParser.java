@@ -10,76 +10,84 @@
 package org.jkiss.dbeaver.ext.exportnow;
 
 import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.google.gson.Gson;
+import java.io.IOException;
+import java.io.StringReader;
+import java.util.Map;
+import java.util.Optional;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.model.data.json.JSONUtils;
 import org.jkiss.utils.CommonUtils;
 
-import java.io.IOException;
-import java.io.StringReader;
-import java.util.Map;
-
 /**
- * Parses the {@code @exportnow} command parameter: a leading JSON config object,
- * optionally followed by an inline SQL query.
+ * Parses the {@code @exportnow} command parameter: a leading JSON config object, optionally
+ * followed by an inline SQL query.
  */
 final class ExportCommandParser {
 
-    private final Gson gson = new Gson();
-    private final JsonFactory jsonFactory = new JsonFactory();
+  private static final int NOT_FOUND = -1;
+  private static final String SYNTAX_ERROR =
+      "Invalid syntax. Use '@exportnow {\"type\": <type>, \"producer\": {...}, \"consumer\": {...},"
+          + " \"processor\": {...}} [<query>]'";
 
-    private static final String SYNTAX_ERROR =
-        "Invalid syntax. Use '@exportnow {\"type\": <type>, \"producer\": {...}, \"consumer\": {...}, \"processor\": {...}} [<query>]'";
+  /** Parsed command parameter: the export settings plus the optional inline SQL. */
+  record ParsedCommand(@NotNull ExportConfig config, @NotNull Optional<String> inlineSql) {}
 
-    /** Parsed command parameter: transfer settings plus optional inline SQL. */
-    record ParsedCommand(@NotNull Map<String, Object> params, @Nullable String sql) {
+  private final Gson gson = new Gson();
+  private final JsonFactory jsonFactory = new JsonFactory();
+
+  /** Splits the parameter into JSON settings and inline SQL, and validates the mandatory type. */
+  @NotNull
+  ParsedCommand parseParameters(@Nullable String parameter) throws DBException {
+    final String text = CommonUtils.notEmpty(parameter).trim();
+    final int jsonEnd = findJsonEnd(text);
+    if (jsonEnd == NOT_FOUND) {
+      throw new DBException(SYNTAX_ERROR);
     }
-
-    /**
-     * Strips trailing statement separators (the SQL parser includes the trailing
-     * {@code ;} in the parameter) and validates the mandatory type.
-     */
-    @NotNull
-    ParsedCommand parseParameters(@Nullable String parameter) throws DBException {
-        final String text = CommonUtils.notEmpty(parameter).trim();
-        final int jsonEnd = findJsonEnd(text);
-        if (jsonEnd < 0) {
-            throw new DBException(SYNTAX_ERROR);
-        }
-        final String json = text.substring(0, jsonEnd);
-        String sql = text.substring(jsonEnd).trim();
-        while (sql.endsWith(";")) {
-            sql = sql.substring(0, sql.length() - 1).trim();
-        }
-
-        final Map<String, Object> params;
-        try {
-            params = JSONUtils.parseMap(gson, new StringReader(json));
-        } catch (Exception e) {
-            throw new DBException(SYNTAX_ERROR, e);
-        }
-        if (CommonUtils.isEmpty(JSONUtils.getString(params, HeadlessExportJob.PARAMETER_TYPE))) {
-            throw new DBException("`type` attribute is mandatory for @exportnow");
-        }
-        return new ParsedCommand(params, sql.isEmpty() ? null : sql);
+    final ExportConfig config = new ExportConfig(parseJson(text.substring(0, jsonEnd)));
+    if (CommonUtils.isEmpty(config.type())) {
+      throw new DBException("`type` attribute is mandatory for @exportnow");
     }
+    final String sql = stripTrailingSemicolons(text.substring(jsonEnd));
+    return new ParsedCommand(config, Optional.of(sql).filter(inline -> !inline.isEmpty()));
+  }
 
-    /** Returns the index just past the closing brace of the leading JSON object, or -1. */
-    private int findJsonEnd(@NotNull String text) {
-        if (!text.startsWith("{")) {
-            return -1;
-        }
-        try (com.fasterxml.jackson.core.JsonParser parser = jsonFactory.createParser(text)) {
-            if (parser.nextToken() != JsonToken.START_OBJECT) {
-                return -1;
-            }
-            parser.skipChildren();
-            return (int) parser.currentTokenLocation().getCharOffset() + 1;
-        } catch (IOException e) {
-            return -1;
-        }
+  @NotNull
+  private Map<String, Object> parseJson(@NotNull String json) throws DBException {
+    try {
+      return JSONUtils.parseMap(gson, new StringReader(json));
+    } catch (Exception e) {
+      throw new DBException(SYNTAX_ERROR, e);
     }
+  }
+
+  /** DBeaver's script parser includes the trailing {@code ;} in the command parameter. */
+  @NotNull
+  private String stripTrailingSemicolons(@NotNull String sql) {
+    String result = sql.trim();
+    while (result.endsWith(";")) {
+      result = result.substring(0, result.length() - 1).trim();
+    }
+    return result;
+  }
+
+  /** Index just past the closing brace of the leading JSON object, or {@link #NOT_FOUND}. */
+  private int findJsonEnd(@NotNull String text) {
+    if (!text.startsWith("{")) {
+      return NOT_FOUND;
+    }
+    try (JsonParser parser = jsonFactory.createParser(text)) {
+      if (parser.nextToken() != JsonToken.START_OBJECT) {
+        return NOT_FOUND;
+      }
+      parser.skipChildren();
+      return (int) parser.currentTokenLocation().getCharOffset() + 1;
+    } catch (IOException e) {
+      return NOT_FOUND;
+    }
+  }
 }

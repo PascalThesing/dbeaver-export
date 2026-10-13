@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -73,6 +74,51 @@ jobs:
         with:
           name: exportnow-update-site
           path: releng/repository/target/org.jkiss.dbeaver.ext.exportnow.repository-*.zip
+
+      # PR test build: the repository folder itself is the artifact, so the zip
+      # GitHub serves is the update site and installs directly in DBeaver
+      - name: Upload PR test update site
+        id: pr-site
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: exportnow-update-site-pr${{ github.event.pull_request.number }}
+          path: releng/repository/target/repository/
+          retention-days: 30
+
+      - name: Comment test build on the PR
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v7
+        env:
+          ARTIFACT_URL: ${{ steps.pr-site.outputs.artifact-url }}
+        with:
+          script: |
+            const marker = '<!-- exportnow-test-build -->';
+            const pr = context.payload.pull_request;
+            const sha = pr.head.sha.substring(0, 7);
+            const name = `exportnow-update-site-pr${pr.number}`;
+            const body = [
+              marker,
+              `### Test build for ${sha}`,
+              '',
+              `Download: [${name}.zip](${process.env.ARTIFACT_URL}) (kept 30 days, GitHub login required)`,
+              '',
+              'Install in DBeaver:',
+              '1. *Help → Install New Software… → Add… → Archive…* and select the downloaded zip (no need to unpack).',
+              '2. Select *DBeaver Headless Export Command*, finish the wizard and restart DBeaver.',
+              '',
+              'To update to a newer test build, uninstall the old one first via *Help → About → Installation Details*.',
+            ].join('\n');
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              ...context.repo,
+              issue_number: pr.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: pr.number, body });
+            }
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
