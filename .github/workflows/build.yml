@@ -36,9 +36,9 @@ jobs:
       EXPORTNOW_PG_USER: postgres
       EXPORTNOW_PG_PASSWORD: exportnow
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -56,7 +56,7 @@ jobs:
 
       - name: Upload test diagnostics on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-diagnostics
           path: |
@@ -64,13 +64,13 @@ jobs:
             tests/**/target/work/data/.metadata/.log
 
       - name: Upload plugin jar
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: exportnow-plugin-jar
           path: plugins/org.jkiss.dbeaver.ext.exportnow/target/org.jkiss.dbeaver.ext.exportnow-*.jar
 
       - name: Upload update site zip
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: exportnow-update-site
           path: releng/repository/target/org.jkiss.dbeaver.ext.exportnow.repository-*.zip
@@ -80,7 +80,7 @@ jobs:
       - name: Upload PR test update site
         id: pr-site
         if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: exportnow-update-site-pr${{ github.event.pull_request.number }}
           path: releng/repository/target/repository/
@@ -88,7 +88,7 @@ jobs:
 
       - name: Comment test build on the PR
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           ARTIFACT_URL: ${{ steps.pr-site.outputs.artifact-url }}
         with:
@@ -122,7 +122,7 @@ jobs:
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             plugins/org.jkiss.dbeaver.ext.exportnow/target/org.jkiss.dbeaver.ext.exportnow-*.jar
