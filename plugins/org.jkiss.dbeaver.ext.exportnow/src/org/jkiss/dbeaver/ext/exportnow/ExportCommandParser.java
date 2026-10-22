@@ -9,11 +9,9 @@
  */
 package org.jkiss.dbeaver.ext.exportnow;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
 import com.google.gson.Gson;
-import java.io.IOException;
+import com.google.gson.JsonParseException;
+import com.google.gson.JsonParser;
 import java.io.StringReader;
 import java.util.Map;
 import java.util.Optional;
@@ -38,7 +36,6 @@ final class ExportCommandParser {
   record ParsedCommand(@NotNull ExportConfig config, @NotNull Optional<String> inlineSql) {}
 
   private final Gson gson = new Gson();
-  private final JsonFactory jsonFactory = new JsonFactory();
 
   /** Splits the parameter into JSON settings and inline SQL, and validates the mandatory type. */
   @NotNull
@@ -75,19 +72,28 @@ final class ExportCommandParser {
     return result;
   }
 
-  /** Index just past the closing brace of the leading JSON object, or {@link #NOT_FOUND}. */
+  /**
+   * Index just past the closing brace of the leading JSON object, or {@link #NOT_FOUND}. Gson
+   * decides: the first prefix ending in a {@code '}'} that parses as a complete JSON object is the
+   * object — a {@code '}'} inside a string makes its prefix invalid and is skipped.
+   */
   private int findJsonEnd(@NotNull String text) {
     if (!text.startsWith("{")) {
       return NOT_FOUND;
     }
-    try (JsonParser parser = jsonFactory.createParser(text)) {
-      if (parser.nextToken() != JsonToken.START_OBJECT) {
-        return NOT_FOUND;
+    for (int end = text.indexOf('}'); end >= 0; end = text.indexOf('}', end + 1)) {
+      if (isJsonObject(text.substring(0, end + 1))) {
+        return end + 1;
       }
-      parser.skipChildren();
-      return (int) parser.currentTokenLocation().getCharOffset() + 1;
-    } catch (IOException e) {
-      return NOT_FOUND;
+    }
+    return NOT_FOUND;
+  }
+
+  private boolean isJsonObject(@NotNull String json) {
+    try {
+      return JsonParser.parseString(json).isJsonObject();
+    } catch (JsonParseException e) {
+      return false;
     }
   }
 }
