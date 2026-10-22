@@ -205,7 +205,12 @@ The first file uses `;` and `1.234,5`, the second `,` and `1,234.5`.
 1. Download the update-site zip (`org.jkiss.dbeaver.ext.exportnow.repository-*.zip`) from the
    [latest release](../../releases) or from a build's workflow artifacts.
 2. In DBeaver: *Help → Install New Software… → Add… → Archive…*, select the zip.
-3. Select *DBeaver Headless Export Command*, finish the wizard, restart DBeaver.
+3. Select *DBeaver Headless Export Command* and **untick *Contact all update sites during
+   install to find required software***. The plugin has no dependencies beyond DBeaver itself,
+   and with the box ticked DBeaver also queries its own update sites, so it asks you to trust
+   each of their certificates first.
+4. Finish the wizard. DBeaver asks once whether to trust *unsigned content* — the plugin and its
+   feature, nothing else — confirm with *Trust Selected*, then restart DBeaver.
 
 **Headless (p2 director):**
 
