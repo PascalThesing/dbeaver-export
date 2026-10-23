@@ -79,6 +79,13 @@ public class ExportNowParameterTest {
   }
 
   @Test
+  public void closingBraceInsideStringRightBeforeTheEnd() throws DBException {
+    var parsed = parser.parseParameters("{\"type\": \"csv\", \"a\": \"}\"} select 1;");
+    assertEquals("}", JSONUtils.getString(parsed.config().json(), "a"));
+    assertEquals("select 1", parsed.inlineSql().orElseThrow());
+  }
+
+  @Test
   public void escapedQuoteBeforeClosingBrace() throws DBException {
     var parsed = parser.parseParameters("{\"type\": \"csv\", \"a\": \"x\\\"\"} select 1;");
     assertEquals("x\"", JSONUtils.getString(parsed.config().json(), "a"));
