@@ -99,7 +99,7 @@ final class ExportVariables {
   private List<ExportRequest> withKnownSettings(
       @NotNull List<ExportRequest> requests, @NotNull VariableLookup lookup) {
     return requests.stream()
-        .map(request -> request.withConfig(request.config().withJson(lookup::replaceIn)))
+        .map(request -> request.with(request.config().withJson(lookup::replaceIn), request.sql()))
         .toList();
   }
 
@@ -169,9 +169,14 @@ final class ExportVariables {
     return exports.stream()
         .map(
             export ->
-                new ExportRequest(
-                    export.request().config().withJson(json -> lookup.replaceIn(json, answered)),
-                    fillParameters(export, answers)))
+                export
+                    .request()
+                    .with(
+                        export
+                            .request()
+                            .config()
+                            .withJson(json -> lookup.replaceIn(json, answered)),
+                        fillParameters(export, answers)))
         .toList();
   }
 

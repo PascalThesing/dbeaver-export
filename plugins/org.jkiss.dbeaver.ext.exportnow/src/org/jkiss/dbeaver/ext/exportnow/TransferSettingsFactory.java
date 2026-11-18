@@ -27,6 +27,7 @@ import org.jkiss.dbeaver.model.data.DBDDataFormatterProfile;
 import org.jkiss.dbeaver.model.data.json.JSONUtils;
 import org.jkiss.dbeaver.model.impl.PropertyDescriptor;
 import org.jkiss.dbeaver.model.preferences.DBPPropertyDescriptor;
+import org.jkiss.dbeaver.model.sql.data.SQLQueryDataContainer;
 import org.jkiss.dbeaver.model.struct.DBSDataContainer;
 import org.jkiss.dbeaver.runtime.DBWorkbench;
 import org.jkiss.dbeaver.tools.transfer.DTConstants;
@@ -70,40 +71,62 @@ final class TransferSettingsFactory {
       @NotNull DataTransferNodeDescriptor consumer,
       @NotNull DataTransferProcessorDescriptor processor) {}
 
+  /** Everything in the JSON that can be wrong, resolved once: format, preset, profile. */
+  private record Checked(
+      @NotNull Nodes nodes,
+      @NotNull Optional<ExcelCsvPreset> preset,
+      @NotNull Map<String, Object> consumerSettings,
+      @NotNull DBDDataFormatterProfile profile) {}
+
   private final ExcelCsvPreset excelPreset = new ExcelCsvPreset();
+
+  /**
+   * Checks an export's settings without running it, the same way {@link #create} does: unknown
+   * format, preset or data-format profile fail here, before any export of the run starts.
+   */
+  void validate(@NotNull ExportConfig config) throws DBException {
+    check(config);
+  }
 
   @NotNull
   ExportSettings create(@NotNull DBSDataContainer container, @NotNull ExportConfig config)
       throws DBException {
-    final Nodes nodes = findNodes(container, config.type());
-    final Optional<ExcelCsvPreset> preset = preset(config);
-    final Map<String, Object> consumerSettings = createConsumerSettings(config, preset);
-    final DBDDataFormatterProfile profile = formatterProfile(consumerSettings);
+    final Checked checked = check(config);
+    log.info("@exportnow: format " + config.type() + " via " + checked.nodes().processor().getId());
     final Map<String, Object> processorSettings =
-        createProcessorSettings(nodes.processor(), config, preset, profile);
+        createProcessorSettings(
+            checked.nodes().processor(), config, checked.preset(), checked.profile());
     final Map<String, Object> nodeSettings =
-        nodeSettings(nodes, createProducerSettings(config), consumerSettings, processorSettings);
+        nodeSettings(
+            checked.nodes(),
+            createProducerSettings(config),
+            checked.consumerSettings(),
+            processorSettings);
     return new ExportSettings(
         newTransferSettings(container, nodeSettings),
-        excelPreset.splitColumnsWarning(processorSettings, profile).stream().toList());
+        excelPreset.splitColumnsWarning(processorSettings, checked.profile()).stream().toList());
   }
 
   @NotNull
-  private Nodes findNodes(@NotNull DBSDataContainer container, @Nullable String type)
-      throws DBException {
+  private Checked check(@NotNull ExportConfig config) throws DBException {
+    final Nodes nodes = findNodes(config.type());
+    final Optional<ExcelCsvPreset> preset = preset(config);
+    final Map<String, Object> consumerSettings = createConsumerSettings(config, preset);
+    return new Checked(nodes, preset, consumerSettings, formatterProfile(consumerSettings));
+  }
+
+  @NotNull
+  private Nodes findNodes(@Nullable String type) throws DBException {
     final DataTransferRegistry registry = DataTransferRegistry.getInstance();
     final DataTransferNodeDescriptor consumer = registry.getNodeById(CONSUMER_NODE_ID);
     return new Nodes(
-        registry.getNodeById(PRODUCER_NODE_ID),
-        consumer,
-        findProcessor(registry, consumer, container, type));
+        registry.getNodeById(PRODUCER_NODE_ID), consumer, findProcessor(registry, consumer, type));
   }
 
   @NotNull
   private DataTransferProcessorDescriptor findProcessor(
       @NotNull DataTransferRegistry registry,
       @NotNull DataTransferNodeDescriptor consumerNode,
-      @NotNull DBSDataContainer container,
       @Nullable String type)
       throws DBException {
     final DataTransferProcessorDescriptor processor =
@@ -112,16 +135,14 @@ final class TransferSettingsFactory {
         registry.getProcessor(CONSUMER_NODE_ID + ":" + XlsxExporter.PROCESSOR_ID);
     if (XLSX.equals(type) && (processor != null || builtInXlsx != null)) {
       // DBeaver's Office extension has more options: prefer it when installed
-      log.info(
-          "@exportnow: xlsx via "
-              + (processor != null ? "DBeaver's Office extension" : "the built-in exporter"));
       return processor != null ? processor : builtInXlsx;
     }
     if (processor != null) {
       return processor;
     }
     final List<String> available =
-        consumerNode.getAvailableProcessors(List.of(container)).stream()
+        // every @exportnow export reads from a query container
+        consumerNode.getAvailableProcessors(SQLQueryDataContainer.class).stream()
             .map(descriptor -> descriptor == builtInXlsx ? XLSX : descriptor.getId())
             .map(id -> id.replaceFirst("^stream\\.", ""))
             .distinct()

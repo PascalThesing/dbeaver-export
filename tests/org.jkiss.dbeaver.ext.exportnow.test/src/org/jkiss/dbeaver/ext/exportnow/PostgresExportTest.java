@@ -10,7 +10,9 @@
 package org.jkiss.dbeaver.ext.exportnow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.Gson;
@@ -22,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -33,6 +36,8 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.jobs.Job;
+import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.DBUtils;
@@ -48,9 +53,11 @@ import org.jkiss.dbeaver.model.exec.DBCSession;
 import org.jkiss.dbeaver.model.exec.DBCStatement;
 import org.jkiss.dbeaver.model.exec.DBCStatementType;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
+import org.jkiss.dbeaver.model.sql.SQLControlCommand;
 import org.jkiss.dbeaver.model.sql.SQLQuery;
 import org.jkiss.dbeaver.model.sql.SQLScriptContext;
 import org.jkiss.dbeaver.model.sql.data.SQLQueryDataContainer;
+import org.jkiss.dbeaver.model.sql.parser.SQLScriptParser;
 import org.jkiss.dbeaver.registry.DataSourceProviderRegistry;
 import org.jkiss.dbeaver.registry.driver.DriverDescriptor;
 import org.jkiss.dbeaver.registry.driver.DriverLibraryAbstract;
@@ -222,7 +229,7 @@ public class PostgresExportTest {
         @exportnow {"type": "csv"};
         select $$a;b$$ as dollar_quoted, 1 as n;
         """;
-    final var blocks = new ExportBlockScanner().findBlocks(dataSource.getDataSource(), text);
+    final var blocks = new ExportBlockScanner().scan(dataSource.getDataSource(), text).blocks();
     assertEquals(1, blocks.size());
     assertTrue(
         blocks.get(0).request().sql().contains("dollar_quoted"),
@@ -299,6 +306,73 @@ public class PostgresExportTest {
     assertEquals(32_767, xlsx.cell(sheet, "G2").text().length());
   }
 
+  /** One bad block aborts the whole run: an error naming its line, and no file at all. */
+  @Test
+  public void badBlockAbortsTheWholeRun() throws Exception {
+    final String script =
+        commandLine("run_ok") + "\n@exportnow {\"type\": \"xls\"} select 2 as n;\n";
+    final DBException error = assertThrows(DBException.class, () -> runCommand(script));
+    assertTrue(error.getMessage().contains("line 2: "), error.getMessage());
+    assertTrue(exportJobs().isEmpty(), "no export job may start: " + exportJobs());
+    assertFalse(Files.exists(outDir.resolve("run_ok.csv")), "the good block must not export");
+  }
+
+  /** The same harness exports every block when all are valid. */
+  @Test
+  public void validRunExportsEveryBlock() throws Exception {
+    runCommand(commandLine("run_a") + "\n" + commandLine("run_b") + "\n");
+    for (Job job : exportJobs()) {
+      assertTrue(job.join(60_000, null), "export did not finish within a minute");
+    }
+    assertEquals(
+        List.of("n", "1"),
+        Files.readAllLines(outDir.resolve("run_a.csv")).stream()
+            .map(l -> l.replace("\"", ""))
+            .toList());
+    assertTrue(Files.exists(outDir.resolve("run_b.csv")));
+  }
+
+  private String commandLine(String filePattern) {
+    return "@exportnow {\"type\": \"csv\", \"consumer\": {\"outputFolder\": \""
+        + outDir.toString().replace("\\", "\\\\")
+        + "\", \"outputFilePattern\": \""
+        + filePattern
+        + "\"}} select 1 as n;";
+  }
+
+  /** Executes the script's first command as the SQL editor would, with the script as source. */
+  private void runCommand(String script) throws Exception {
+    final Path source = Files.createTempFile(outDir, "script", ".sql");
+    Files.writeString(source, script);
+    final SQLScriptContext scriptContext =
+        new SQLScriptContext(
+            null,
+            () -> DBUtils.getDefaultContext(dataSource.getDataSource(), false),
+            source,
+            Writer.nullWriter(),
+            null);
+    final SQLControlCommand command =
+        SQLScriptParser.extractScriptQueries(
+                new SQLParserContextFactory().create(dataSource.getDataSource(), script),
+                0,
+                script.length(),
+                true,
+                false,
+                false)
+            .stream()
+            .filter(SQLControlCommand.class::isInstance)
+            .map(SQLControlCommand.class::cast)
+            .findFirst()
+            .orElseThrow();
+    new SQLCommandExportNow().handleCommand(monitor, command, scriptContext);
+  }
+
+  private List<Job> exportJobs() {
+    return Arrays.stream(Job.getJobManager().find(null))
+        .filter(HeadlessExportJob.class::isInstance)
+        .toList();
+  }
+
   /** ${user} (DB login) resolves in the query and in the file name, before the job runs. */
   @Test
   public void connectionUserVariableInQueryAndFileName() throws Exception {
@@ -318,7 +392,8 @@ public class PostgresExportTest {
                 List.of(
                     new ExportRequest(
                         new ExportConfig(Map.of("outputFilePattern", "who_${user}")),
-                        "select '${user}' as login, current_user as db_user")))
+                        "select '${user}' as login, current_user as db_user",
+                        1)))
             .orElseThrow()
             .get(0);
     final String sql = resolved.sql();

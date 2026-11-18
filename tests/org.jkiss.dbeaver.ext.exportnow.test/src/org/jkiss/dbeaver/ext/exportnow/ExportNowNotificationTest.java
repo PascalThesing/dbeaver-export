@@ -117,6 +117,9 @@ public class ExportNowNotificationTest {
 
     assertEquals(IStatus.ERROR, status.getSeverity(), "failed transfer must yield an error status");
     assertTrue(
+        status.getMessage().contains("Window > Show View > Error Log"),
+        "the error dialog must say where the details are: " + status.getMessage());
+    assertTrue(
         notifications.stream().anyMatch(n -> n.id().equals("exportnow.error")),
         "'Export failed' notification must be shown, got: " + notifications);
     assertFalse(

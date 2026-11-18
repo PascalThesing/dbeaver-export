@@ -49,7 +49,7 @@ public class ExportBlockScannerTest {
 
   @Test
   public void findsInlineAndClassicBlocks() {
-    List<ExportBlockScanner.Block> blocks = scanner.findBlocks(null, SCRIPT);
+    List<ExportBlockScanner.Block> blocks = scanner.scan(null, SCRIPT).blocks();
     assertEquals(2, blocks.size());
     assertEquals("select * from customers", blocks.get(0).request().sql());
     assertEquals("select * from orders", blocks.get(1).request().sql());
@@ -66,7 +66,7 @@ public class ExportBlockScannerTest {
         select *
         from t1;
         """;
-    List<ExportBlockScanner.Block> blocks = scanner.findBlocks(null, text);
+    List<ExportBlockScanner.Block> blocks = scanner.scan(null, text).blocks();
     assertEquals(1, blocks.size());
     assertEquals("select *\nfrom t1", blocks.get(0).request().sql());
   }
@@ -80,7 +80,7 @@ public class ExportBlockScannerTest {
            with a semicolon inside */
         select * from t1;
         """;
-    List<ExportBlockScanner.Block> blocks = scanner.findBlocks(null, text);
+    List<ExportBlockScanner.Block> blocks = scanner.scan(null, text).blocks();
     assertEquals(1, blocks.size());
     assertTrue(
         blocks.get(0).request().sql().contains("from t1"),
@@ -95,7 +95,7 @@ public class ExportBlockScannerTest {
         select * -- not the end;
         from t1;
         """;
-    List<ExportBlockScanner.Block> blocks = scanner.findBlocks(null, text);
+    List<ExportBlockScanner.Block> blocks = scanner.scan(null, text).blocks();
     assertEquals(1, blocks.size());
     assertTrue(
         blocks.get(0).request().sql().contains("from t1"),
@@ -112,7 +112,7 @@ public class ExportBlockScannerTest {
         @@
         select 'after';
         """;
-    List<ExportBlockScanner.Block> blocks = scanner.findBlocks(null, text);
+    List<ExportBlockScanner.Block> blocks = scanner.scan(null, text).blocks();
     assertEquals(1, blocks.size());
     assertTrue(blocks.get(0).request().sql().contains("from orders o"));
   }
@@ -126,7 +126,7 @@ public class ExportBlockScannerTest {
         """;
     // no closing @@ - the parser falls back to matching the single-@ form,
     // so the block still exports the following statement
-    List<ExportBlockScanner.Block> blocks = scanner.findBlocks(null, text);
+    List<ExportBlockScanner.Block> blocks = scanner.scan(null, text).blocks();
     assertEquals(1, blocks.size());
     assertEquals("select * from t1", blocks.get(0).request().sql());
   }
@@ -138,7 +138,7 @@ public class ExportBlockScannerTest {
         @exportnow {"type": "csv", "consumer": {"outputFilePattern": "we};rd"}};
         select ';' as x, 'don''t' as y;
         """;
-    List<ExportBlockScanner.Block> blocks = scanner.findBlocks(null, text);
+    List<ExportBlockScanner.Block> blocks = scanner.scan(null, text).blocks();
     assertEquals(1, blocks.size());
     assertEquals("select ';' as x, 'don''t' as y", blocks.get(0).request().sql());
   }
@@ -146,7 +146,7 @@ public class ExportBlockScannerTest {
   @Test
   public void crlfLineEndings() {
     String text = "@exportnow {\"type\": \"csv\"};\r\n\r\nselect * from t1;\r\n";
-    List<ExportBlockScanner.Block> blocks = scanner.findBlocks(null, text);
+    List<ExportBlockScanner.Block> blocks = scanner.scan(null, text).blocks();
     assertEquals(1, blocks.size());
     assertEquals("select * from t1", blocks.get(0).request().sql());
   }
@@ -156,28 +156,63 @@ public class ExportBlockScannerTest {
     int secondCmd = SCRIPT.indexOf("@exportnow", 1 + SCRIPT.indexOf("@exportnow"));
     // selection covering only the second (classic) block
     List<ExportBlockScanner.Block> blocks =
-        scanner.findBlocks(null, SCRIPT, new TextRange(secondCmd, SCRIPT.length() - secondCmd));
+        scanner.scan(null, SCRIPT, new TextRange(secondCmd, SCRIPT.length() - secondCmd)).blocks();
     assertEquals(1, blocks.size());
     assertEquals("select * from orders", blocks.get(0).request().sql());
     // selection covering only the first line
-    blocks = scanner.findBlocks(null, SCRIPT, new TextRange(0, SCRIPT.indexOf('\n')));
+    blocks = scanner.scan(null, SCRIPT, new TextRange(0, SCRIPT.indexOf('\n'))).blocks();
     assertEquals(1, blocks.size());
     assertEquals("select * from customers", blocks.get(0).request().sql());
   }
 
   @Test
   public void textWithoutBlocksYieldsNothing() {
-    assertTrue(scanner.findBlocks(null, "select 1;\nselect 2;\n").isEmpty());
-    // command directly followed by another command has no query to export
-    assertTrue(
-        scanner
-            .findBlocks(null, "@exportnow {\"type\": \"csv\"};\n@exportnow {\"type\": \"csv\"};\n")
-            .isEmpty());
+    ExportBlockScanner.Scan scan = scanner.scan(null, "select 1;\nselect 2;\n");
+    assertTrue(scan.blocks().isEmpty());
+    assertTrue(scan.problems().isEmpty());
+  }
+
+  @Test
+  public void classicBlockWithoutQueryIsReported() {
+    // a command directly followed by another command, and one at the end of the script
+    ExportBlockScanner.Scan scan =
+        scanner.scan(
+            null,
+            """
+            @exportnow {"type": "csv", "consumer": {"outputFilePattern": "a"}};
+            @exportnow {"type": "csv", "consumer": {"outputFilePattern": "b"}};
+            select * from t1;
+            @exportnow {"type": "csv", "consumer": {"outputFilePattern": "c"}};
+            """);
+    assertEquals(1, scan.blocks().size());
+    assertEquals("select * from t1", scan.blocks().get(0).request().sql());
+    assertEquals(
+        List.of(
+            new ExportBlockScanner.Problem(1, ExportBlockScanner.NO_QUERY),
+            new ExportBlockScanner.Problem(4, ExportBlockScanner.NO_QUERY)),
+        scan.problems());
+  }
+
+  @Test
+  public void blocksKnowTheirLine() {
+    List<ExportBlockScanner.Block> blocks = scanner.scan(null, SCRIPT).blocks();
+    assertEquals(1, blocks.get(0).request().line());
+    assertEquals(2, blocks.get(1).request().line());
+  }
+
+  @Test
+  public void problemsOutsideTheSelectionAreNotReported() {
+    String text = "@exportnow {broken;\n@exportnow {\"type\": \"csv\"} select 2;\n";
+    int second = text.indexOf("@exportnow", 1);
+    ExportBlockScanner.Scan scan =
+        scanner.scan(null, text, new TextRange(second, text.length() - second));
+    assertEquals(1, scan.blocks().size());
+    assertTrue(scan.problems().isEmpty(), scan.problems().toString());
   }
 
   @Test
   public void blockOffsetsPointAtTheCommands() {
-    List<ExportBlockScanner.Block> blocks = scanner.findBlocks(null, SCRIPT);
+    List<ExportBlockScanner.Block> blocks = scanner.scan(null, SCRIPT).blocks();
     assertEquals(2, blocks.size());
     assertEquals(SCRIPT.indexOf("@exportnow"), blocks.get(0).offset());
     assertEquals(SCRIPT.indexOf("@exportnow", blocks.get(0).offset() + 1), blocks.get(1).offset());
@@ -192,7 +227,7 @@ public class ExportBlockScannerTest {
         @exportnow {"type": "csv"};
         select * from t1;
         """;
-    List<ExportBlockScanner.Block> blocks = scanner.findBlocks(null, text);
+    List<ExportBlockScanner.Block> blocks = scanner.scan(null, text).blocks();
     assertEquals(1, blocks.size());
     assertEquals("select * from t1", blocks.get(0).request().sql());
   }
@@ -200,7 +235,7 @@ public class ExportBlockScannerTest {
   @Test
   public void statementWithoutTrailingSemicolonAtEof() {
     String text = "@exportnow {\"type\": \"csv\"};\nselect * from t1";
-    List<ExportBlockScanner.Block> blocks = scanner.findBlocks(null, text);
+    List<ExportBlockScanner.Block> blocks = scanner.scan(null, text).blocks();
     assertEquals(1, blocks.size());
     assertEquals("select * from t1", blocks.get(0).request().sql());
   }
@@ -212,7 +247,7 @@ public class ExportBlockScannerTest {
         @exportnow {"type": "csv", "consumer": {"outputFilePattern": "a"}} select * from a;
         @exportnow {"type": "csv", "consumer": {"outputFilePattern": "b"}} select * from b;
         """;
-    List<ExportBlockScanner.Block> blocks = scanner.findBlocks(null, text);
+    List<ExportBlockScanner.Block> blocks = scanner.scan(null, text).blocks();
     assertEquals(2, blocks.size());
     assertEquals("select * from a", blocks.get(0).request().sql());
     assertEquals("select * from b", blocks.get(1).request().sql());
@@ -221,14 +256,14 @@ public class ExportBlockScannerTest {
   @Test
   public void multilineCommandBlockWithCrlf() {
     String text = "@@exportnow {\"type\": \"csv\"}\r\nselect o.*\r\nfrom orders o\r\n@@\r\n";
-    List<ExportBlockScanner.Block> blocks = scanner.findBlocks(null, text);
+    List<ExportBlockScanner.Block> blocks = scanner.scan(null, text).blocks();
     assertEquals(1, blocks.size());
     assertTrue(blocks.get(0).request().sql().contains("from orders o"));
   }
 
   @Test
   public void parsedCommandCarriedInBlock() {
-    List<ExportBlockScanner.Block> blocks = scanner.findBlocks(null, SCRIPT);
+    List<ExportBlockScanner.Block> blocks = scanner.scan(null, SCRIPT).blocks();
     assertEquals(
         "customers",
         ((Map<?, ?>) blocks.get(0).request().config().json().get("consumer"))
@@ -236,9 +271,9 @@ public class ExportBlockScannerTest {
   }
 
   @Test
-  public void blockWithMissingTypeIsSkipped() {
-    List<ExportBlockScanner.Block> blocks =
-        scanner.findBlocks(
+  public void blockWithMissingTypeIsReported() {
+    ExportBlockScanner.Scan scan =
+        scanner.scan(
             null,
             """
             @exportnow {"consumer": {"outputFilePattern": "x"}};
@@ -246,14 +281,17 @@ public class ExportBlockScannerTest {
             @exportnow {"type": "csv"};
             select * from t2;
             """);
-    assertEquals(1, blocks.size(), "block without mandatory type must be skipped");
-    assertEquals("select * from t2", blocks.get(0).request().sql());
+    assertEquals(1, scan.blocks().size());
+    assertEquals("select * from t2", scan.blocks().get(0).request().sql());
+    assertEquals(
+        List.of(new ExportBlockScanner.Problem(1, "`type` attribute is mandatory for @exportnow")),
+        scan.problems());
   }
 
   @Test
-  public void malformedBlockIsSkipped() {
-    List<ExportBlockScanner.Block> blocks =
-        scanner.findBlocks(
+  public void malformedBlockIsReported() {
+    ExportBlockScanner.Scan scan =
+        scanner.scan(
             null,
             """
             @exportnow {broken json;
@@ -261,8 +299,11 @@ public class ExportBlockScannerTest {
             @exportnow {"type": "csv"};
             select * from t2;
             """);
-    assertEquals(1, blocks.size());
-    assertEquals("select * from t2", blocks.get(0).request().sql());
+    assertEquals(1, scan.blocks().size());
+    assertEquals("select * from t2", scan.blocks().get(0).request().sql());
+    assertEquals(1, scan.problems().size());
+    assertEquals(1, scan.problems().get(0).line());
+    assertTrue(scan.problems().get(0).reason().startsWith("Invalid syntax"), scan.toString());
   }
 
   @Test
@@ -276,7 +317,7 @@ public class ExportBlockScannerTest {
         select 4 as d
         @@
         """;
-    List<ExportBlockScanner.Block> blocks = scanner.findBlocks(null, text);
+    List<ExportBlockScanner.Block> blocks = scanner.scan(null, text).blocks();
     assertEquals(3, blocks.size(), "a ';' inside the JSON must not split the command: " + blocks);
     assertEquals(
         List.of("select 1 as a, 2 as b", "select 3 as c", "select 4 as d"),
@@ -304,7 +345,7 @@ public class ExportBlockScannerTest {
         @exportnow {"type": "csv", "preset": "excel", "formatterProfile": "English", "consumer": {"outputFolder": "/exports", "outputFilePattern": "orders_us"}}
         SELECT * FROM orders;
         """;
-    List<ExportBlockScanner.Block> blocks = scanner.findBlocks(null, text);
+    List<ExportBlockScanner.Block> blocks = scanner.scan(null, text).blocks();
     assertEquals(
         List.of(
             "SELECT * FROM orders WHERE region = ${region} AND created_by = '${user}'",

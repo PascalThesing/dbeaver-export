@@ -10,6 +10,7 @@
 package org.jkiss.dbeaver.ext.exportnow;
 
 import org.jkiss.code.NotNull;
+import org.jkiss.code.Nullable;
 import org.jkiss.dbeaver.model.DBPMessageType;
 import org.jkiss.dbeaver.runtime.DBeaverNotifications;
 import org.jkiss.dbeaver.utils.GeneralUtils;
@@ -49,12 +50,14 @@ final class ExportNotifications {
         DBPMessageType.ERROR);
   }
 
-  void blockSkipped(int offset, @NotNull String reason) {
-    show(
-        FAILED,
-        "Export block skipped",
-        "Malformed @exportnow block at offset " + offset + ": " + reason,
-        DBPMessageType.WARNING);
+  /**
+   * The run was stopped before any export started.
+   *
+   * @param onClick runs when the user clicks the notification, {@code null} for none
+   */
+  void runAborted(@NotNull String text, @Nullable Runnable onClick) {
+    DBeaverNotifications.showNotification(
+        FAILED, "Export run aborted", text, DBPMessageType.ERROR, onClick);
   }
 
   private void show(String id, String title, String text, DBPMessageType type) {
