@@ -2,7 +2,7 @@
 <feature
       id="org.jkiss.dbeaver.ext.exportnow.feature"
       label="DBeaver Headless Export Command (@exportnow)"
-      version="1.0.0.qualifier"
+      version="1.1.0.qualifier"
       provider-name="Pascal Thesing">
 
    <description>
@@ -12,7 +12,13 @@
 
    <license url="http://www.apache.org/licenses/LICENSE-2.0">
       Apache License, Version 2.0
+
+      Includes the xlsx libraries fastexcel (https://github.com/dhatim/fastexcel)
+      and opczip (https://github.com/rzymek/opczip), both under the
+      Apache License, Version 2.0.
    </license>
 
    <plugin id="org.jkiss.dbeaver.ext.exportnow" version="0.0.0"/>
+   <plugin id="org.dhatim.fastexcel" version="0.0.0"/>
+   <plugin id="com.github.rzymek.opczip" version="0.0.0"/>
 </feature>

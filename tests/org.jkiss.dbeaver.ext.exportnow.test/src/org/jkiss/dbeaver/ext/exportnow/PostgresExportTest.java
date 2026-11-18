@@ -272,6 +272,33 @@ public class PostgresExportTest {
     assertEquals(List.of("\"a\"\t\"b\"", "1\t2"), Files.readAllLines(outDir.resolve("tabbed.csv")));
   }
 
+  /** xlsx without DBeaver's Office extension: the built-in exporter keeps the column types. */
+  @Test
+  public void xlsxKeepsColumnTypes() throws Exception {
+    joinAll(
+        List.of(
+            export(
+                "select 1234.5::numeric as amount, 'Grüße' as name, date '2026-11-18' as day,"
+                    + " timestamp '2026-11-18 14:30:05' as stamp, true as flag,"
+                    + " null::text as nothing, repeat('x', 40000) as long_text",
+                "types",
+                Map.of("type", "xlsx", "processor", Map.of("nullString", "(null)")))));
+    final XlsxContent xlsx = XlsxContent.read(Files.readAllBytes(outDir.resolve("types.xlsx")));
+    final String sheet = xlsx.sheetNames().get(0);
+    assertEquals(
+        List.of("amount", "name", "day", "stamp", "flag", "nothing", "long_text"),
+        xlsx.row(sheet, 1));
+    assertTrue(xlsx.cell(sheet, "A1").bold(), "header must be bold");
+    assertEquals("n", xlsx.cell(sheet, "A2").type());
+    assertEquals(1234.5, Double.parseDouble(xlsx.cell(sheet, "A2").text()));
+    assertEquals("Grüße", xlsx.cell(sheet, "B2").text());
+    assertEquals("yyyy-mm-dd", xlsx.cell(sheet, "C2").numberFormat());
+    assertEquals("yyyy-mm-dd hh:mm:ss", xlsx.cell(sheet, "D2").numberFormat());
+    assertEquals("b", xlsx.cell(sheet, "E2").type());
+    assertEquals("(null)", xlsx.cell(sheet, "F2").text());
+    assertEquals(32_767, xlsx.cell(sheet, "G2").text().length());
+  }
+
   /** ${user} (DB login) resolves in the query and in the file name, before the job runs. */
   @Test
   public void connectionUserVariableInQueryAndFileName() throws Exception {

@@ -10,12 +10,15 @@
 package org.jkiss.dbeaver.ext.exportnow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.Gson;
 import java.io.StringReader;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.jkiss.dbeaver.DBException;
@@ -61,6 +64,50 @@ public class HeadlessExportSettingsTest {
     DBException e =
         assertThrows(DBException.class, () -> settings("{\"type\": \"no-such-format\"}"));
     assertTrue(e.getMessage().contains("no-such-format"), "error must name the unknown type");
+  }
+
+  @Test
+  public void xlsxUsesTheBuiltInExporterWithoutDbeaversOfficeExtension() throws Exception {
+    assertNull(
+        DataTransferRegistry.getInstance().getProcessor("stream_consumer:stream.xlsx"),
+        "precondition: the test runtime has no Office extension");
+    DataTransferSettings settings = settings("{\"type\": \"xlsx\"}");
+    assertEquals("stream_consumer:stream.exportnow.xlsx", settings.getProcessor().getFullId());
+  }
+
+  @Test
+  public void builtInXlsxAcceptsTheOfficeExportersPropertyNames() throws Exception {
+    Map<String, Object> xlsx =
+        settings(
+                "{\"type\": \"xlsx\", \"processor\": {\"header\": \"none\","
+                    + " \"nullString\": \"-\"}}")
+            .getProcessorProperties();
+    assertEquals("none", xlsx.get("header"));
+    assertEquals("-", xlsx.get("nullString"));
+    assertEquals("xlsx", xlsx.get("extension"));
+  }
+
+  @Test
+  public void unknownTypeListsXlsxButNotTheInternalProcessorId() {
+    DBException e = assertThrows(DBException.class, () -> settings("{\"type\": \"xlsxx\"}"));
+    assertTrue(e.getMessage().contains("csv"), e.getMessage());
+    assertTrue(e.getMessage().matches("(?s).*\\bxlsx\\b.*"), e.getMessage());
+    assertFalse(e.getMessage().contains("exportnow"), e.getMessage());
+  }
+
+  @Test
+  public void xlsPointsToTheOfficeExtensionAndToXlsx() {
+    String message = TransferSettingsFactory.unknownTypeMessage("xls", List.of("csv", "xlsx"));
+    assertTrue(message.contains("Office"), message);
+    assertTrue(message.contains("Help > Install New Software"), message);
+    assertTrue(message.contains("https://dbeaver.io/update/office/latest/"), message);
+    assertTrue(message.contains("\"type\": \"xlsx\""), message);
+  }
+
+  @Test
+  public void otherUnknownTypesOnlyListTheAvailableTypes() {
+    String message = TransferSettingsFactory.unknownTypeMessage("foo", List.of("csv", "xlsx"));
+    assertEquals("Can't find processor of type 'foo'. Available types: csv, xlsx", message);
   }
 
   @Test

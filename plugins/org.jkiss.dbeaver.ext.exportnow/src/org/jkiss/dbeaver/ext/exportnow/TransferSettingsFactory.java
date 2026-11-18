@@ -52,6 +52,13 @@ final class TransferSettingsFactory {
   private static final String PRODUCER_NODE_ID = "database_producer";
   private static final String CONSUMER_NODE_ID = "stream_consumer";
   private static final String PROCESSOR_ID_PREFIX = CONSUMER_NODE_ID + ":stream.";
+  private static final String XLSX = "xlsx";
+  private static final String XLS = "xls";
+
+  /** How to install DBeaver's Office extension, for messages. */
+  static final String INSTALL_OFFICE =
+      "Help > Install New Software, Work with: https://dbeaver.io/update/office/latest/,"
+          + " select DBeaver Office Support, Finish, then restart DBeaver.";
 
   /** DBeaver's transfer settings plus warnings about values Excel would misread. */
   record ExportSettings(
@@ -101,16 +108,44 @@ final class TransferSettingsFactory {
       throws DBException {
     final DataTransferProcessorDescriptor processor =
         registry.getProcessor(PROCESSOR_ID_PREFIX + type);
+    final DataTransferProcessorDescriptor builtInXlsx =
+        registry.getProcessor(CONSUMER_NODE_ID + ":" + XlsxExporter.PROCESSOR_ID);
+    if (XLSX.equals(type) && (processor != null || builtInXlsx != null)) {
+      // DBeaver's Office extension has more options: prefer it when installed
+      log.info(
+          "@exportnow: xlsx via "
+              + (processor != null ? "DBeaver's Office extension" : "the built-in exporter"));
+      return processor != null ? processor : builtInXlsx;
+    }
     if (processor != null) {
       return processor;
     }
-    final String available =
+    final List<String> available =
         consumerNode.getAvailableProcessors(List.of(container)).stream()
-            .map(descriptor -> descriptor.getId().replaceFirst("^stream\\.", ""))
+            .map(descriptor -> descriptor == builtInXlsx ? XLSX : descriptor.getId())
+            .map(id -> id.replaceFirst("^stream\\.", ""))
+            .distinct()
             .sorted()
-            .collect(Collectors.joining(", "));
-    throw new DBException(
-        "Can't find processor of type '" + type + "'. Available types: " + available);
+            .toList();
+    throw new DBException(unknownTypeMessage(type, available));
+  }
+
+  /**
+   * The error for an unknown export format. The old Excel format {@code xls} exists only in
+   * DBeaver's Office extension, so it says how to install it - and that {@code xlsx} needs nothing.
+   */
+  @NotNull
+  static String unknownTypeMessage(@Nullable String type, @NotNull List<String> available) {
+    final String unknown = "Can't find processor of type '" + type + "'. ";
+    final String types = "Available types: " + String.join(", ", available);
+    if (!XLS.equals(type)) {
+      return unknown + types;
+    }
+    return unknown
+        + "The old Excel format xls needs DBeaver's Office extension: "
+        + INSTALL_OFFICE
+        + " Or use \"type\": \"xlsx\", which works without it. "
+        + types;
   }
 
   /** The node and processor settings keyed the way {@link DataTransferSettings} reads them. */
