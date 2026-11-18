@@ -106,6 +106,9 @@ public class SQLCommandExportNow implements SQLControlCommandHandler {
     final List<Problem> problems = new ArrayList<>(scan.problems());
     problems.addAll(validate(resolved.get()));
     if (!problems.isEmpty()) {
+      // Retry in DBeaver's error dialog (or the next @exportnow) must check again, not pass
+      // silently
+      scriptContext.setData(RUN_FLAG, null);
       throw abort(problems);
     }
     scheduleExports(

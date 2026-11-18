@@ -317,6 +317,63 @@ public class PostgresExportTest {
     assertFalse(Files.exists(outDir.resolve("run_ok.csv")), "the good block must not export");
   }
 
+  /** A classic block without a query used to be dropped silently; now it aborts the run. */
+  @Test
+  public void blockWithoutQueryAbortsTheWholeRun() throws Exception {
+    final String script = commandLine("noquery_ok") + "\n@exportnow {\"type\": \"csv\"};\n";
+    final DBException error = assertThrows(DBException.class, () -> runCommand(script));
+    assertTrue(error.getMessage().contains("line 2: no query"), error.getMessage());
+    assertTrue(exportJobs().isEmpty(), "no export job may start: " + exportJobs());
+    assertFalse(Files.exists(outDir.resolve("noquery_ok.csv")));
+  }
+
+  @Test
+  public void malformedBlockAbortsTheWholeRun() throws Exception {
+    final String script = commandLine("malformed_ok") + "\n@exportnow {broken;\n";
+    final DBException error = assertThrows(DBException.class, () -> runCommand(script));
+    assertTrue(error.getMessage().contains("line 2: Invalid syntax"), error.getMessage());
+    assertTrue(exportJobs().isEmpty(), "no export job may start: " + exportJobs());
+    assertFalse(Files.exists(outDir.resolve("malformed_ok.csv")));
+  }
+
+  /** Only problems, no exportable block: still an abort, never a "cancelled" run. */
+  @Test
+  public void loneBlockWithoutQueryAborts() throws Exception {
+    final DBException error =
+        assertThrows(DBException.class, () -> runCommand("@exportnow {\"type\": \"csv\"};\n"));
+    assertTrue(error.getMessage().contains("line 1: no query"), error.getMessage());
+  }
+
+  /** Retry in DBeaver's error dialog runs the same command again: it must fail again. */
+  @Test
+  public void retryOfAnAbortedRunReportsTheErrorAgain() throws Exception {
+    final String script =
+        commandLine("retry_ok") + "\n@exportnow {\"type\": \"xls\"} select 2 as n;\n";
+    final SQLScriptContext scriptContext = scriptContext(script);
+    final SQLControlCommand command = firstCommand(script);
+    assertThrows(DBException.class, () -> execute(command, scriptContext));
+    assertThrows(DBException.class, () -> execute(command, scriptContext));
+    assertTrue(exportJobs().isEmpty(), "no export job may start: " + exportJobs());
+  }
+
+  /** xlsx: a failing query reports the database error, an empty result gives the header. */
+  @Test
+  public void xlsxReportsQueryErrorsAndWritesEmptyResults() throws Exception {
+    final HeadlessExportJob failing =
+        export("select * from exportnow_no_such_table", "xlsx_fail", Map.of("type", "xlsx"));
+    assertTrue(failing.join(60_000, null));
+    assertFalse(failing.getResult().isOK(), "a failing query must fail the export");
+    assertTrue(
+        String.valueOf(failing.getResult().getException()).contains("exportnow_no_such_table")
+            || failing.getResult().toString().contains("exportnow_no_such_table"),
+        "the database error must reach the user: " + failing.getResult());
+    joinAll(List.of(export("select 1 as n where false", "xlsx_empty", Map.of("type", "xlsx"))));
+    final XlsxContent xlsx =
+        XlsxContent.read(Files.readAllBytes(outDir.resolve("xlsx_empty.xlsx")));
+    assertEquals(List.of("n"), xlsx.row(xlsx.sheetNames().get(0), 1));
+    assertEquals(1, xlsx.rowCount(xlsx.sheetNames().get(0)));
+  }
+
   /** The same harness exports every block when all are valid. */
   @Test
   public void validRunExportsEveryBlock() throws Exception {
@@ -342,29 +399,37 @@ public class PostgresExportTest {
 
   /** Executes the script's first command as the SQL editor would, with the script as source. */
   private void runCommand(String script) throws Exception {
+    execute(firstCommand(script), scriptContext(script));
+  }
+
+  private void execute(SQLControlCommand command, SQLScriptContext scriptContext) throws Exception {
+    new SQLCommandExportNow().handleCommand(monitor, command, scriptContext);
+  }
+
+  private SQLScriptContext scriptContext(String script) throws Exception {
     final Path source = Files.createTempFile(outDir, "script", ".sql");
     Files.writeString(source, script);
-    final SQLScriptContext scriptContext =
-        new SQLScriptContext(
-            null,
-            () -> DBUtils.getDefaultContext(dataSource.getDataSource(), false),
-            source,
-            Writer.nullWriter(),
-            null);
-    final SQLControlCommand command =
-        SQLScriptParser.extractScriptQueries(
-                new SQLParserContextFactory().create(dataSource.getDataSource(), script),
-                0,
-                script.length(),
-                true,
-                false,
-                false)
-            .stream()
-            .filter(SQLControlCommand.class::isInstance)
-            .map(SQLControlCommand.class::cast)
-            .findFirst()
-            .orElseThrow();
-    new SQLCommandExportNow().handleCommand(monitor, command, scriptContext);
+    return new SQLScriptContext(
+        null,
+        () -> DBUtils.getDefaultContext(dataSource.getDataSource(), false),
+        source,
+        Writer.nullWriter(),
+        null);
+  }
+
+  private SQLControlCommand firstCommand(String script) {
+    return SQLScriptParser.extractScriptQueries(
+            new SQLParserContextFactory().create(dataSource.getDataSource(), script),
+            0,
+            script.length(),
+            true,
+            false,
+            false)
+        .stream()
+        .filter(SQLControlCommand.class::isInstance)
+        .map(SQLControlCommand.class::cast)
+        .findFirst()
+        .orElseThrow();
   }
 
   private List<Job> exportJobs() {

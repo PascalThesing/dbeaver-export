@@ -232,7 +232,8 @@ SELECT * FROM orders;
   *DBeaver Office Support*, *Finish*, restart DBeaver. Installing fails when DBeaver sits in a
   write-protected folder such as *Program Files* — start DBeaver as administrator or install it
   in a writable folder. An `@exportnow` with `"type": "xls"` without the extension stops with
-  these steps, and clicking its notification opens *Install New Software*.
+  these steps, and clicking its notification opens *Install New Software* (while DBeaver's
+  script error dialog is open, close it first — it blocks the notification).
 
 The built-in exporter uses [fastexcel](https://github.com/dhatim/fastexcel) and
 [opczip](https://github.com/rzymek/opczip) (both Apache License 2.0); they are installed as
@@ -268,7 +269,8 @@ dbeaver -application org.eclipse.equinox.p2.director \
 **Before exporting.** When an `@exportnow` runs, every block of the execution is checked first:
 valid JSON with a `type`, a query to export, a known format, preset and data-format profile. If
 any block fails, **no export starts**. DBeaver shows the error in the SQL editor (like a failed
-statement), and an *Export run aborted* notification lists every bad block:
+statement; *Retry* checks again, *Skip* moves on to the next statement), and an *Export run
+aborted* notification lists every bad block:
 
 ```
 No export started - fix these @exportnow blocks first:

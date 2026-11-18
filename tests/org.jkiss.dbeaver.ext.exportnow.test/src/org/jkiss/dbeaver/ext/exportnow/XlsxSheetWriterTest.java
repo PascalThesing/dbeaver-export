@@ -159,6 +159,23 @@ public class XlsxSheetWriterTest {
   }
 
   @Test
+  public void rowsWrittenAcrossFlushesAreAllKept() throws Exception {
+    // the writer flushes every 10,000 rows to keep memory flat
+    final ByteArrayOutputStream out = new ByteArrayOutputStream();
+    final XlsxSheetWriter writer =
+        new XlsxSheetWriter(out, SHEET, List.of("n", "text"), XlsxSheetWriter.EXCEL_MAX_ROWS);
+    for (int i = 1; i <= 25_000; i++) {
+      writer.writeRow(new Object[] {i, "row " + i});
+    }
+    writer.finish();
+    final XlsxContent xlsx = XlsxContent.read(out.toByteArray());
+    assertEquals(25_001, xlsx.rowCount(SHEET));
+    assertEquals(List.of("10000", "row 10000"), xlsx.row(SHEET, 10_001));
+    assertEquals(List.of("10001", "row 10001"), xlsx.row(SHEET, 10_002));
+    assertEquals(List.of("25000", "row 25000"), xlsx.row(SHEET, 25_001));
+  }
+
+  @Test
   public void charactersXmlForbidsAreDropped() throws Exception {
     final XlsxContent xlsx = write(null, new Object[] {"a\u0001b\u0000c"});
     assertEquals("abc", xlsx.cell(SHEET, "A1").text());
