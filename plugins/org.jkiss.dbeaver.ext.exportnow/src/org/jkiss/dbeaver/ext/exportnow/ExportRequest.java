@@ -11,11 +11,16 @@ package org.jkiss.dbeaver.ext.exportnow;
 
 import org.jkiss.code.NotNull;
 
-/** One export of a run: its settings and the query whose result is exported. */
-record ExportRequest(@NotNull ExportConfig config, @NotNull String sql) {
+/**
+ * One export of a run: its settings, the query whose result is exported, and the script line of its
+ * {@code @exportnow} command for messages ({@link #UNKNOWN_LINE} without an editor document).
+ */
+record ExportRequest(@NotNull ExportConfig config, @NotNull String sql, int line) {
+
+  static final int UNKNOWN_LINE = 0;
 
   @NotNull
-  ExportRequest withConfig(@NotNull ExportConfig newConfig) {
-    return new ExportRequest(newConfig, sql);
+  ExportRequest with(@NotNull ExportConfig newConfig, @NotNull String newSql) {
+    return new ExportRequest(newConfig, newSql, line);
   }
 }

@@ -13,8 +13,13 @@ This plugin adds a new SQL control command **`@exportnow`** that:
   as the next statement**
 - runs the data transfer **headlessly** — no wizard, and the script continues
 - runs each export as its own **background job** — multiple exports execute **in parallel**
-- lets each export **fail independently**: a failed export shows an error notification and is
-  logged, but the script and the other exports keep running
+- **checks every block before exporting**: a malformed block, a missing query or an unknown
+  format, preset or data-format profile stops the whole run before anything is written, with an
+  error naming each bad block by its line
+- lets each running export **fail independently**: a database error or an unwritable folder fails
+  only that export (error dialog, notification and log entry); the script and the other exports
+  keep running
+- exports **xlsx** out of the box — no DBeaver Office extension needed
 - still executes the query normally in the editor, so results appear in the **result grid**
   and the **Query Manager** history
 
@@ -48,7 +53,8 @@ SELECT 'script keeps going';
 
 Note the mandatory space after `@exportnow`. Exports run in the background — the script
 does not stop, multiple exports run in parallel, and a failing export doesn't affect the
-others. Running exports appear as "Export data: …" jobs in the status-bar progress area
+others. Mistakes in the blocks themselves are caught before any export starts: the run is
+aborted and nothing is written (see [Errors and logs](#errors-and-logs)). Running exports appear as "Export data: …" jobs in the status-bar progress area
 and the Background Tasks view, where they can be **cancelled**; cancelling shows an
 "Export cancelled" notification.
 
@@ -141,6 +147,8 @@ Entering `'EU'` and `nightly` writes `/exports/nightly/orders_EU.csv` from
 - **Cancel** aborts all exports of that execution ("Export cancelled" notification, no files;
   the rest of the script still runs);
   **Ignore** runs the queries as written, like DBeaver does.
+- The settings are checked after this dialog, with the values filled in: if any block of the
+  execution is bad, no export starts (see [Errors and logs](#errors-and-logs)).
 - Classic form: the query below the `@exportnow` line also runs normally in the editor, so
   DBeaver asks a second time for that run (prefilled with the values just entered). The
   inline and `@@` forms only export, with a single dialog.
@@ -193,11 +201,43 @@ The first file uses `;` and `1.234,5`, the second `,` and `1,234.5`.
 - Without `formatterProfile` DBeaver's global data-format settings are used (by default the
   locale DBeaver runs with), and the preset's delimiter follows them.
 - `formatterProfile` may also be given as `consumer.formatterProfile` (DBeaver's native key).
-- An unknown profile name fails the export with the list of available profiles (DBeaver itself
-  would silently fall back to the global profile).
+- An unknown profile name stops the run before any export starts, with the list of available
+  profiles (DBeaver itself would silently fall back to the global profile).
 - If you set a `processor.delimiter` that equals the decimal separator of formatted numbers,
   the export still runs but warns — in the log and in the "Export finished" notification —
   because Excel would split the numbers across columns.
+
+### Excel (xlsx)
+
+`"type": "xlsx"` writes an Excel workbook — no extra software needed:
+
+```sql
+@exportnow {"type": "xlsx", "consumer": {"outputFolder": "/exports", "outputFilePattern": "orders"}}
+SELECT * FROM orders;
+```
+
+- Column labels form a bold first row (`"processor": {"header": "none"}` leaves it out).
+- Numbers, booleans and dates stay real Excel numbers, booleans and dates (dates as
+  `yyyy-mm-dd`, timestamps as `yyyy-mm-dd hh:mm:ss`); everything else is written as DBeaver
+  displays it. `"processor": {"nullString": "(null)"}` writes a text for NULL values; by default
+  their cells stay empty.
+- Excel's limits are respected: more than 1,048,576 rows continue on a new sheet (`Export (2)`,
+  … with the header again), text longer than 32,767 characters is cut (logged as a warning),
+  and dates before 1900, `NaN` and infinity are written as text.
+- If DBeaver's own **Office extension** is installed, `xlsx` uses its exporter instead, with its
+  extra options (sheet names, row numbers, …); `header` and `nullString` work with both.
+- The old **`xls`** format exists only in DBeaver's Office extension. To install it:
+  *Help → Install New Software…*, *Work with:* `https://dbeaver.io/update/office/latest/`
+  (it is also listed under *DBeaver Extensions* on DBeaver's main update site), select
+  *DBeaver Office Support*, *Finish*, restart DBeaver. Installing fails when DBeaver sits in a
+  write-protected folder such as *Program Files* — start DBeaver as administrator or install it
+  in a writable folder. An `@exportnow` with `"type": "xls"` without the extension stops with
+  these steps, and clicking its notification opens *Install New Software* (while DBeaver's
+  script error dialog is open, close it first — it blocks the notification).
+
+The built-in exporter uses [fastexcel](https://github.com/dhatim/fastexcel) and
+[opczip](https://github.com/rzymek/opczip) (both Apache License 2.0); they are installed as
+separate bundles together with the plugin.
 
 ## Installation
 
@@ -206,11 +246,12 @@ The first file uses `;` and `1.234,5`, the second `,` and `1,234.5`.
    [latest release](../../releases) or from a build's workflow artifacts.
 2. In DBeaver: *Help → Install New Software… → Add… → Archive…*, select the zip.
 3. Select *DBeaver Headless Export Command* and **untick *Contact all update sites during
-   install to find required software***. The plugin has no dependencies beyond DBeaver itself,
-   and with the box ticked DBeaver also queries its own update sites, so it asks you to trust
-   each of their certificates first.
-4. Finish the wizard. DBeaver asks once whether to trust *unsigned content* — the plugin and its
-   feature, nothing else — confirm with *Trust Selected*, then restart DBeaver.
+   install to find required software***. Everything the plugin needs beyond DBeaver itself — the
+   xlsx libraries fastexcel and opczip — is in the zip, and with the box ticked DBeaver also
+   queries its own update sites, so it asks you to trust each of their certificates first.
+4. Finish the wizard. DBeaver asks once whether to trust *unsigned content* — the plugin, its
+   feature and the two xlsx libraries, nothing else — confirm with *Trust Selected*, then
+   restart DBeaver.
 
 **Headless (p2 director):**
 
@@ -222,6 +263,46 @@ dbeaver -application org.eclipse.equinox.p2.director \
 ```
 
 (Note: DBeaver does not reconcile a `dropins/` folder — use one of the installs above.)
+
+## Errors and logs
+
+**Before exporting.** When an `@exportnow` runs, every block of the execution is checked first:
+valid JSON with a `type`, a query to export, a known format, preset and data-format profile. If
+any block fails, **no export starts**. DBeaver shows the error in the SQL editor (like a failed
+statement; *Retry* checks again, *Skip* moves on to the next statement), and an *Export run
+aborted* notification lists every bad block:
+
+```
+No export started - fix these @exportnow blocks first:
+line 3: Can't find processor of type 'xsl'. Available types: csv, …, xlsx, xml
+line 9: no query to export: put it after the JSON on the same line, or as the next statement
+```
+
+**While exporting.** A failed export (database error, unwritable folder, …) opens an *Export
+failed* error dialog that stays until closed, plus an *Export failed* notification. The other
+exports keep running.
+
+**Where to look afterwards:**
+
+- *Window → Show View → Error Log* — every failure with its full stack trace (double-click an
+  entry).
+- The log files in DBeaver's workspace folder `.metadata`: `.log` (warnings and errors) and
+  `dbeaver-debug.log` (also the plugin's progress lines):
+  - Windows: `%APPDATA%\DBeaverData\workspace6\.metadata\`
+  - macOS: `~/Library/DBeaverData/workspace6/.metadata/`
+  - Linux: `~/.local/share/DBeaverData/workspace6/.metadata/`
+- *Help → Collect Diagnostic info* — saves all logs into one folder to send along with a bug
+  report (it may contain sensitive data).
+- Notifications close after 10 seconds by default and can be switched off globally or per type
+  in *Window → Preferences → User Interface → Notifications*; the error dialog and the logs are
+  not affected by that.
+
+**Nothing happens at all?** Every execution of an `@exportnow` writes
+`@exportnow: command executed, scanning …` to `dbeaver-debug.log`, then one line per block and
+the number of exports started. If that first line is missing, DBeaver did not recognize the
+line as an `@exportnow` command and never called the plugin — check that the line starts with
+`@exportnow` followed by a space, and that the plugin is installed (*Help → About DBeaver →
+Installation Details → Plug-ins*: `org.jkiss.dbeaver.ext.exportnow`).
 
 ## Performance & concurrency
 

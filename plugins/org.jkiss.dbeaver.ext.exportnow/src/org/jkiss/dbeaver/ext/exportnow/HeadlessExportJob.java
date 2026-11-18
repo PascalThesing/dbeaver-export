@@ -35,6 +35,7 @@ class HeadlessExportJob extends AbstractJob {
 
   private static final Log log = Log.getLog(HeadlessExportJob.class);
   private static final int MAX_NAME_LENGTH = 60;
+  private static final String ERROR_LOG_VIEW = "Window > Show View > Error Log";
 
   private final DBSDataContainer container;
   private final ExportConfig config;
@@ -72,7 +73,9 @@ class HeadlessExportJob extends AbstractJob {
   private IStatus failed(@NotNull Throwable error) {
     log.error("Export failed: " + describe(), error);
     notifications.failed(describe(), error);
-    return GeneralUtils.makeExceptionStatus("Export failed: " + describe(), error);
+    // this status becomes Eclipse's error dialog; the stack trace is in the Error Log view
+    return GeneralUtils.makeExceptionStatus(
+        "Export failed: " + describe() + "\nDetails: " + ERROR_LOG_VIEW, error);
   }
 
   @NotNull

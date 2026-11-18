@@ -11,9 +11,11 @@ package org.jkiss.dbeaver.ext.exportnow;
 
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.jkiss.dbeaver.model.sql.registry.SQLCommandHandlerDescriptor;
 import org.jkiss.dbeaver.model.sql.registry.SQLCommandsRegistry;
+import org.jkiss.dbeaver.tools.transfer.registry.DataTransferProcessorDescriptor;
 import org.jkiss.dbeaver.tools.transfer.registry.DataTransferRegistry;
 import org.junit.jupiter.api.Test;
 
@@ -40,5 +42,14 @@ public class ExportNowRegistrationTest {
     assertNotNull(registry.getNodeById("stream_consumer"), "stream_consumer node missing");
     assertNotNull(
         registry.getProcessor("stream_consumer:stream.csv"), "csv stream processor missing");
+  }
+
+  @Test
+  public void builtInXlsxExporterRegistered() throws Exception {
+    DataTransferProcessorDescriptor processor =
+        DataTransferRegistry.getInstance().getProcessor("stream_consumer:stream.exportnow.xlsx");
+    assertNotNull(processor, "built-in xlsx processor not registered");
+    assertTrue(processor.isBinaryFormat(), "xlsx is a binary format");
+    assertInstanceOf(XlsxExporter.class, processor.getInstance());
   }
 }

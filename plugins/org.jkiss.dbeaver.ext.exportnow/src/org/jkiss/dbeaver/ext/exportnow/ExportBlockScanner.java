@@ -9,11 +9,12 @@
  */
 package org.jkiss.dbeaver.ext.exportnow;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.IntStream;
 import org.jkiss.code.NotNull;
 import org.jkiss.code.Nullable;
+import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.ext.exportnow.ExportCommandParser.ParsedCommand;
 import org.jkiss.dbeaver.model.DBPDataSource;
@@ -29,23 +30,46 @@ import org.jkiss.dbeaver.model.sql.parser.SQLScriptParser;
  * understands dialect string escapes, line and block comments, custom delimiters, {@code BEGIN/END}
  * blocks — and both command forms: single-line {@code @exportnow ...} and multiline
  * {@code @@exportnow ... @@}. The query of a "classic" block (no inline SQL) is the next parsed
- * statement.
+ * statement. A block that cannot export (malformed JSON, no type, no query) is reported as a {@link
+ * Problem} with its line, never silently dropped.
  */
 final class ExportBlockScanner {
+
+  static final String NO_QUERY =
+      "no query to export: put it after the JSON on the same line, or as the next statement";
 
   private static final Log log = Log.getLog(ExportBlockScanner.class);
 
   /** One export block: the offset of its command and the export it describes. */
   record Block(int offset, @NotNull ExportRequest request) {}
 
+  /** A block that cannot export: its line (1-based) and why. */
+  record Problem(int line, @NotNull String reason) {
+
+    @NotNull
+    @Override
+    public String toString() {
+      return line == ExportRequest.UNKNOWN_LINE ? reason : "line " + line + ": " + reason;
+    }
+  }
+
+  /** What a scan found: the exportable blocks and the blocks that cannot export. */
+  record Scan(@NotNull List<Block> blocks, @NotNull List<Problem> problems) {
+
+    static final Scan NOTHING = new Scan(List.of(), List.of());
+
+    boolean isEmpty() {
+      return blocks.isEmpty() && problems.isEmpty();
+    }
+  }
+
   private final ExportCommandParser commandParser = new ExportCommandParser();
   private final SQLParserContextFactory parserContextFactory = new SQLParserContextFactory();
-  private final ExportNotifications notifications = new ExportNotifications();
 
   /** Scans the whole text. */
   @NotNull
-  List<Block> findBlocks(@Nullable DBPDataSource dataSource, @NotNull String text) {
-    return findBlocks(dataSource, text, new TextRange(0, text.length()));
+  Scan scan(@Nullable DBPDataSource dataSource, @NotNull String text) {
+    return scan(dataSource, text, new TextRange(0, text.length()));
   }
 
   /**
@@ -54,16 +78,32 @@ final class ExportBlockScanner {
    * counts).
    */
   @NotNull
-  List<Block> findBlocks(
-      @Nullable DBPDataSource dataSource, @NotNull String text, @NotNull TextRange range) {
+  Scan scan(@Nullable DBPDataSource dataSource, @NotNull String text, @NotNull TextRange range) {
     // Parse the whole document: a range-bounded parse would cut off the query
     // following a command near the end of a selection.
     final List<SQLScriptElement> elements = parseScript(dataSource, text);
     final SQLDialect dialect = parserContextFactory.dialect(dataSource);
-    return IntStream.range(0, elements.size())
-        .mapToObj(index -> toBlock(elements, index, range, dialect))
-        .flatMap(Optional::stream)
-        .toList();
+    final List<Block> blocks = new ArrayList<>();
+    final List<Problem> problems = new ArrayList<>();
+    for (int index = 0; index < elements.size(); index++) {
+      if (elements.get(index) instanceof SQLControlCommand command
+          && isExportCommandIn(command, range)) {
+        final int line = lineOf(text, command.getOffset());
+        try {
+          final ParsedCommand parsed = commandParser.parseParameters(command.getParameter());
+          blockSql(parsed, elements, index, dialect)
+              .ifPresentOrElse(
+                  sql ->
+                      blocks.add(
+                          new Block(
+                              command.getOffset(), new ExportRequest(parsed.config(), sql, line))),
+                  () -> problems.add(new Problem(line, NO_QUERY)));
+        } catch (DBException e) {
+          problems.add(new Problem(line, e.getMessage()));
+        }
+      }
+    }
+    return new Scan(List.copyOf(blocks), List.copyOf(problems));
   }
 
   @NotNull
@@ -78,44 +118,20 @@ final class ExportBlockScanner {
     }
   }
 
-  @NotNull
-  private Optional<Block> toBlock(
-      @NotNull List<SQLScriptElement> elements,
-      int index,
-      @NotNull TextRange range,
-      @NotNull SQLDialect dialect) {
-    if (!(elements.get(index) instanceof SQLControlCommand command)
-        || !isExportCommandIn(command, range)) {
-      return Optional.empty();
-    }
-    return parseOrWarn(command)
-        .flatMap(
-            parsed ->
-                blockSql(parsed, elements, index, dialect)
-                    .map(
-                        sql ->
-                            new Block(
-                                command.getOffset(), new ExportRequest(parsed.config(), sql))));
-  }
-
   private boolean isExportCommandIn(@NotNull SQLControlCommand command, @NotNull TextRange range) {
     return SQLCommandExportNow.COMMAND_ID.equals(command.getCommandId())
         && range.contains(command.getOffset());
   }
 
-  @NotNull
-  private Optional<ParsedCommand> parseOrWarn(@NotNull SQLControlCommand command) {
-    try {
-      return Optional.of(commandParser.parseParameters(command.getParameter()));
-    } catch (Exception e) {
-      log.warn(
-          "@exportnow: skipping malformed block at offset "
-              + command.getOffset()
-              + ": "
-              + e.getMessage());
-      notifications.blockSkipped(command.getOffset(), e.getMessage());
-      return Optional.empty();
+  /** 1-based line of a text offset. */
+  static int lineOf(@NotNull String text, int offset) {
+    int line = 1;
+    for (int i = 0; i < offset && i < text.length(); i++) {
+      if (text.charAt(i) == '\n') {
+        line++;
+      }
     }
+    return line;
   }
 
   /** The command's inline SQL, else the next parsed statement (the "classic" form). */

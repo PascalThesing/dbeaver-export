@@ -47,5 +47,30 @@
                 </dependency>
             </dependencies>
         </location>
+        <location includeDependencyDepth="none" includeSource="false" missingManifest="generate" type="Maven" label="fastexcel">
+            <dependencies>
+                <dependency>
+                    <groupId>org.dhatim</groupId>
+                    <artifactId>fastexcel</artifactId>
+                    <version>0.20.2</version>
+                    <type>jar</type>
+                </dependency>
+                <dependency>
+                    <groupId>com.github.rzymek</groupId>
+                    <artifactId>opczip</artifactId>
+                    <version>1.2.0</version>
+                    <type>jar</type>
+                </dependency>
+            </dependencies>
+            <instructions><![CDATA[
+Bundle-Name:           ${mvnArtifactId} (wrapped from Maven ${mvnGroupId}:${mvnArtifactId}:${mvnVersion})
+version:               ${version_cleanup;${mvnVersion}}
+Bundle-SymbolicName:   ${mvnGroupId}.${mvnArtifactId}
+Bundle-Version:        ${version}
+Import-Package:        *
+Export-Package:        *;version="${version}";-noimport:=true
+-noextraheaders:       true
+]]></instructions>
+        </location>
     </locations>
 </target>

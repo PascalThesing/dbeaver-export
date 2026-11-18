@@ -10,7 +10,9 @@
 package org.jkiss.dbeaver.ext.exportnow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.Gson;
@@ -22,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -33,6 +36,8 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.jobs.Job;
+import org.jkiss.dbeaver.DBException;
 import org.jkiss.dbeaver.Log;
 import org.jkiss.dbeaver.model.DBPDataSourceContainer;
 import org.jkiss.dbeaver.model.DBUtils;
@@ -48,9 +53,11 @@ import org.jkiss.dbeaver.model.exec.DBCSession;
 import org.jkiss.dbeaver.model.exec.DBCStatement;
 import org.jkiss.dbeaver.model.exec.DBCStatementType;
 import org.jkiss.dbeaver.model.runtime.VoidProgressMonitor;
+import org.jkiss.dbeaver.model.sql.SQLControlCommand;
 import org.jkiss.dbeaver.model.sql.SQLQuery;
 import org.jkiss.dbeaver.model.sql.SQLScriptContext;
 import org.jkiss.dbeaver.model.sql.data.SQLQueryDataContainer;
+import org.jkiss.dbeaver.model.sql.parser.SQLScriptParser;
 import org.jkiss.dbeaver.registry.DataSourceProviderRegistry;
 import org.jkiss.dbeaver.registry.driver.DriverDescriptor;
 import org.jkiss.dbeaver.registry.driver.DriverLibraryAbstract;
@@ -222,7 +229,7 @@ public class PostgresExportTest {
         @exportnow {"type": "csv"};
         select $$a;b$$ as dollar_quoted, 1 as n;
         """;
-    final var blocks = new ExportBlockScanner().findBlocks(dataSource.getDataSource(), text);
+    final var blocks = new ExportBlockScanner().scan(dataSource.getDataSource(), text).blocks();
     assertEquals(1, blocks.size());
     assertTrue(
         blocks.get(0).request().sql().contains("dollar_quoted"),
@@ -272,6 +279,165 @@ public class PostgresExportTest {
     assertEquals(List.of("\"a\"\t\"b\"", "1\t2"), Files.readAllLines(outDir.resolve("tabbed.csv")));
   }
 
+  /** xlsx without DBeaver's Office extension: the built-in exporter keeps the column types. */
+  @Test
+  public void xlsxKeepsColumnTypes() throws Exception {
+    joinAll(
+        List.of(
+            export(
+                "select 1234.5::numeric as amount, 'Grüße' as name, date '2026-11-18' as day,"
+                    + " timestamp '2026-11-18 14:30:05' as stamp, true as flag,"
+                    + " null::text as nothing, repeat('x', 40000) as long_text",
+                "types",
+                Map.of("type", "xlsx", "processor", Map.of("nullString", "(null)")))));
+    final XlsxContent xlsx = XlsxContent.read(Files.readAllBytes(outDir.resolve("types.xlsx")));
+    final String sheet = xlsx.sheetNames().get(0);
+    assertEquals(
+        List.of("amount", "name", "day", "stamp", "flag", "nothing", "long_text"),
+        xlsx.row(sheet, 1));
+    assertTrue(xlsx.cell(sheet, "A1").bold(), "header must be bold");
+    assertEquals("n", xlsx.cell(sheet, "A2").type());
+    assertEquals(1234.5, Double.parseDouble(xlsx.cell(sheet, "A2").text()));
+    assertEquals("Grüße", xlsx.cell(sheet, "B2").text());
+    assertEquals("yyyy-mm-dd", xlsx.cell(sheet, "C2").numberFormat());
+    assertEquals("yyyy-mm-dd hh:mm:ss", xlsx.cell(sheet, "D2").numberFormat());
+    assertEquals("b", xlsx.cell(sheet, "E2").type());
+    assertEquals("(null)", xlsx.cell(sheet, "F2").text());
+    assertEquals(32_767, xlsx.cell(sheet, "G2").text().length());
+  }
+
+  /** One bad block aborts the whole run: an error naming its line, and no file at all. */
+  @Test
+  public void badBlockAbortsTheWholeRun() throws Exception {
+    final String script =
+        commandLine("run_ok") + "\n@exportnow {\"type\": \"xls\"} select 2 as n;\n";
+    final DBException error = assertThrows(DBException.class, () -> runCommand(script));
+    assertTrue(error.getMessage().contains("line 2: "), error.getMessage());
+    assertTrue(exportJobs().isEmpty(), "no export job may start: " + exportJobs());
+    assertFalse(Files.exists(outDir.resolve("run_ok.csv")), "the good block must not export");
+  }
+
+  /** A classic block without a query used to be dropped silently; now it aborts the run. */
+  @Test
+  public void blockWithoutQueryAbortsTheWholeRun() throws Exception {
+    final String script = commandLine("noquery_ok") + "\n@exportnow {\"type\": \"csv\"};\n";
+    final DBException error = assertThrows(DBException.class, () -> runCommand(script));
+    assertTrue(error.getMessage().contains("line 2: no query"), error.getMessage());
+    assertTrue(exportJobs().isEmpty(), "no export job may start: " + exportJobs());
+    assertFalse(Files.exists(outDir.resolve("noquery_ok.csv")));
+  }
+
+  @Test
+  public void malformedBlockAbortsTheWholeRun() throws Exception {
+    final String script = commandLine("malformed_ok") + "\n@exportnow {broken;\n";
+    final DBException error = assertThrows(DBException.class, () -> runCommand(script));
+    assertTrue(error.getMessage().contains("line 2: Invalid syntax"), error.getMessage());
+    assertTrue(exportJobs().isEmpty(), "no export job may start: " + exportJobs());
+    assertFalse(Files.exists(outDir.resolve("malformed_ok.csv")));
+  }
+
+  /** Only problems, no exportable block: still an abort, never a "cancelled" run. */
+  @Test
+  public void loneBlockWithoutQueryAborts() throws Exception {
+    final DBException error =
+        assertThrows(DBException.class, () -> runCommand("@exportnow {\"type\": \"csv\"};\n"));
+    assertTrue(error.getMessage().contains("line 1: no query"), error.getMessage());
+  }
+
+  /** Retry in DBeaver's error dialog runs the same command again: it must fail again. */
+  @Test
+  public void retryOfAnAbortedRunReportsTheErrorAgain() throws Exception {
+    final String script =
+        commandLine("retry_ok") + "\n@exportnow {\"type\": \"xls\"} select 2 as n;\n";
+    final SQLScriptContext scriptContext = scriptContext(script);
+    final SQLControlCommand command = firstCommand(script);
+    assertThrows(DBException.class, () -> execute(command, scriptContext));
+    assertThrows(DBException.class, () -> execute(command, scriptContext));
+    assertTrue(exportJobs().isEmpty(), "no export job may start: " + exportJobs());
+  }
+
+  /** xlsx: a failing query reports the database error, an empty result gives the header. */
+  @Test
+  public void xlsxReportsQueryErrorsAndWritesEmptyResults() throws Exception {
+    final HeadlessExportJob failing =
+        export("select * from exportnow_no_such_table", "xlsx_fail", Map.of("type", "xlsx"));
+    assertTrue(failing.join(60_000, null));
+    assertFalse(failing.getResult().isOK(), "a failing query must fail the export");
+    assertTrue(
+        String.valueOf(failing.getResult().getException()).contains("exportnow_no_such_table")
+            || failing.getResult().toString().contains("exportnow_no_such_table"),
+        "the database error must reach the user: " + failing.getResult());
+    joinAll(List.of(export("select 1 as n where false", "xlsx_empty", Map.of("type", "xlsx"))));
+    final XlsxContent xlsx =
+        XlsxContent.read(Files.readAllBytes(outDir.resolve("xlsx_empty.xlsx")));
+    assertEquals(List.of("n"), xlsx.row(xlsx.sheetNames().get(0), 1));
+    assertEquals(1, xlsx.rowCount(xlsx.sheetNames().get(0)));
+  }
+
+  /** The same harness exports every block when all are valid. */
+  @Test
+  public void validRunExportsEveryBlock() throws Exception {
+    runCommand(commandLine("run_a") + "\n" + commandLine("run_b") + "\n");
+    for (Job job : exportJobs()) {
+      assertTrue(job.join(60_000, null), "export did not finish within a minute");
+    }
+    assertEquals(
+        List.of("n", "1"),
+        Files.readAllLines(outDir.resolve("run_a.csv")).stream()
+            .map(l -> l.replace("\"", ""))
+            .toList());
+    assertTrue(Files.exists(outDir.resolve("run_b.csv")));
+  }
+
+  private String commandLine(String filePattern) {
+    return "@exportnow {\"type\": \"csv\", \"consumer\": {\"outputFolder\": \""
+        + outDir.toString().replace("\\", "\\\\")
+        + "\", \"outputFilePattern\": \""
+        + filePattern
+        + "\"}} select 1 as n;";
+  }
+
+  /** Executes the script's first command as the SQL editor would, with the script as source. */
+  private void runCommand(String script) throws Exception {
+    execute(firstCommand(script), scriptContext(script));
+  }
+
+  private void execute(SQLControlCommand command, SQLScriptContext scriptContext) throws Exception {
+    new SQLCommandExportNow().handleCommand(monitor, command, scriptContext);
+  }
+
+  private SQLScriptContext scriptContext(String script) throws Exception {
+    final Path source = Files.createTempFile(outDir, "script", ".sql");
+    Files.writeString(source, script);
+    return new SQLScriptContext(
+        null,
+        () -> DBUtils.getDefaultContext(dataSource.getDataSource(), false),
+        source,
+        Writer.nullWriter(),
+        null);
+  }
+
+  private SQLControlCommand firstCommand(String script) {
+    return SQLScriptParser.extractScriptQueries(
+            new SQLParserContextFactory().create(dataSource.getDataSource(), script),
+            0,
+            script.length(),
+            true,
+            false,
+            false)
+        .stream()
+        .filter(SQLControlCommand.class::isInstance)
+        .map(SQLControlCommand.class::cast)
+        .findFirst()
+        .orElseThrow();
+  }
+
+  private List<Job> exportJobs() {
+    return Arrays.stream(Job.getJobManager().find(null))
+        .filter(HeadlessExportJob.class::isInstance)
+        .toList();
+  }
+
   /** ${user} (DB login) resolves in the query and in the file name, before the job runs. */
   @Test
   public void connectionUserVariableInQueryAndFileName() throws Exception {
@@ -291,7 +457,8 @@ public class PostgresExportTest {
                 List.of(
                     new ExportRequest(
                         new ExportConfig(Map.of("outputFilePattern", "who_${user}")),
-                        "select '${user}' as login, current_user as db_user")))
+                        "select '${user}' as login, current_user as db_user",
+                        1)))
             .orElseThrow()
             .get(0);
     final String sql = resolved.sql();

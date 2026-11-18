@@ -74,7 +74,8 @@ public class ExportVariablesTest {
                 i ->
                     new ExportRequest(
                         new ExportConfig(i < settings.size() ? settings.get(i) : Map.of()),
-                        queries.get(i)))
+                        queries.get(i),
+                        i + 1))
             .toList();
     return variables
         .resolve(context, null, requests)
@@ -212,6 +213,30 @@ public class ExportVariablesTest {
     assertEquals(
         List.of("select * from a where r = 'EU'", "select * from bb where r = 'EU' and y = 2026"),
         resolved);
+  }
+
+  @Test
+  public void resolvedRequestsKeepTheLineOfTheirBlock() throws DBException {
+    // with a parameter (answered in the dialog) and without one: both paths rebuild the request
+    RecordingProvider provider = new RecordingProvider(Map.of("region", "'EU'"));
+    List<ExportRequest> resolved =
+        variables
+            .resolve(
+                context(provider),
+                null,
+                List.of(
+                    new ExportRequest(new ExportConfig(Map.of()), "select :region", 3),
+                    new ExportRequest(new ExportConfig(Map.of()), "select 1", 7)))
+            .orElseThrow();
+    assertEquals(List.of(3, 7), resolved.stream().map(ExportRequest::line).toList());
+    List<ExportRequest> withoutDialog =
+        variables
+            .resolve(
+                context(null),
+                null,
+                List.of(new ExportRequest(new ExportConfig(Map.of()), "select 1", 5)))
+            .orElseThrow();
+    assertEquals(5, withoutDialog.get(0).line());
   }
 
   @Test

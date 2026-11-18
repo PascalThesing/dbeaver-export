@@ -9,6 +9,29 @@
             description="Headless export of the next query. Runs in the background without the data transfer wizard, so multiple exports in one script all execute."/>
     </extension>
 
+    <!-- xlsx without DBeaver's optional Office extension. @exportnow prefers DBeaver's own
+         stream.xlsx when it is installed; property names match it, so one JSON fits both. -->
+    <extension point="org.jkiss.dbeaver.dataTransfer">
+        <node ref="stream_consumer">
+            <processor
+                id="stream.exportnow.xlsx"
+                class="org.jkiss.dbeaver.ext.exportnow.XlsxExporter"
+                label="XLSX (@exportnow)"
+                description="Excel workbook, built into the @exportnow plugin - no Office extension needed"
+                binary="true"
+                contentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                appFileExtension="xlsx"
+                appName="Excel"
+                order="11">
+                <propertyGroup label="General">
+                    <property id="extension" label="File extension" type="string" defaultValue="xlsx" required="false"/>
+                    <property id="header" label="Header" type="string" description="label: column labels in the first row (bold); none: no header row" defaultValue="label" validValues="label,none" required="false"/>
+                    <property id="nullString" label="NULL value text" type="string" description="Text written for NULL values; empty leaves the cell empty" defaultValue="" required="false"/>
+                </propertyGroup>
+            </processor>
+        </node>
+    </extension>
+
     <extension point="org.jkiss.dbeaver.notifications">
         <notification id="exportnow.ok" name="Headless export finished"/>
         <notification id="exportnow.cancelled" name="Headless export cancelled"/>
