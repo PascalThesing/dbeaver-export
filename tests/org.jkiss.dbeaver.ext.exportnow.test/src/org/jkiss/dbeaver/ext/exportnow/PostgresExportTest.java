@@ -23,6 +23,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -372,6 +373,48 @@ public class PostgresExportTest {
         XlsxContent.read(Files.readAllBytes(outDir.resolve("xlsx_empty.xlsx")));
     assertEquals(List.of("n"), xlsx.row(xlsx.sheetNames().get(0), 1));
     assertEquals(1, xlsx.rowCount(xlsx.sheetNames().get(0)));
+  }
+
+  /**
+   * The command a user wrote, unchanged except for the folder root: ${user.name} in the folder, a
+   * comma, spaces and ${current_date} in the file name, the query on the next line.
+   */
+  @Test
+  public void userNameFolderAndDatedFileNameWithCommaAndSpaces() throws Exception {
+    final String before = LocalDate.now().toString();
+    runCommand(
+        "@exportnow {\"type\": \"csv\", \"consumer\": {\"outputFolder\": \""
+            + outDir.toString().replace("\\", "\\\\")
+            + "/Users/${user.name}/Documents/\",\"outputFilePattern\": \"Testauswertung_neu,"
+            + " Stand ${current_date}\"}}\n"
+            + "SELECT 1 AS n\n");
+    for (Job job : exportJobs()) {
+      assertTrue(job.join(60_000, null), "export did not finish within a minute");
+      assertTrue(job.getResult().isOK(), "export failed: " + job.getResult());
+    }
+    final String after = LocalDate.now().toString();
+    final Path folder =
+        outDir.resolve("Users").resolve(System.getProperty("user.name")).resolve("Documents");
+    final List<Path> expected =
+        List.of(
+            folder.resolve("Testauswertung_neu, Stand " + before + ".csv"),
+            folder.resolve("Testauswertung_neu, Stand " + after + ".csv"));
+    assertTrue(
+        expected.stream().anyMatch(Files::exists),
+        "expected " + expected.get(0) + ", folder has: " + listing(folder));
+  }
+
+  private String listing(Path folder) throws Exception {
+    if (!Files.isDirectory(folder)) {
+      return "(no folder) - " + outDir + " has: " + listing(outDir, 4);
+    }
+    return listing(folder, 1);
+  }
+
+  private String listing(Path root, int depth) throws Exception {
+    try (var files = Files.walk(root, depth)) {
+      return files.map(Path::toString).toList().toString();
+    }
   }
 
   /** The same harness exports every block when all are valid. */
