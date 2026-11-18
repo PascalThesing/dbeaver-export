@@ -417,6 +417,35 @@ public class ExportVariablesTest {
     assertNull(builtIns.get("current_week"), "unknown names have no value");
   }
 
+  /** A user's command: ${user.name} in the folder, comma, spaces and the date in the name. */
+  @Test
+  public void userNameFolderAndDatedFileNameResolveWithoutAsking() throws DBException {
+    RecordingProvider provider = new RecordingProvider(Map.of());
+    Resolved resolved =
+        resolveRun(
+            new ExportVariables(FIXED_CLOCK),
+            context(provider),
+            List.of(
+                Map.of(
+                    "type",
+                    "csv",
+                    "consumer",
+                    Map.of(
+                        "outputFolder",
+                        "/Users/${user.name}/Documents/",
+                        "outputFilePattern",
+                        "Testauswertung_neu, Stand ${current_date}"))),
+            List.of("select 1"));
+    assertEquals(0, provider.calls, "nothing to ask: both variables are known");
+    assertEquals(
+        Map.of(
+            "outputFolder",
+            "/Users/" + System.getProperty("user.name") + "/Documents/",
+            "outputFilePattern",
+            "Testauswertung_neu, Stand 2026-01-02"),
+        resolved.settings().get(0).get("consumer"));
+  }
+
   @Test
   public void builtInDateWorksInQueryAndFileNameWithoutAsking() throws DBException {
     RecordingProvider provider = new RecordingProvider(Map.of());
