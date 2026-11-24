@@ -364,6 +364,8 @@ mvn verify
 
 - Plugin jar: `plugins/org.jkiss.dbeaver.ext.exportnow/target/`
 - Update-site zip: `releng/repository/target/`
+- Against a DBeaver that requires Java 25 (DBeaver main, 26.3 and later), build with JDK 25 and
+  `mvn verify -Dexportnow.ee=JavaSE-25`.
 
 Code is formatted with [google-java-format](https://github.com/google/google-java-format)
 (via Spotless); `mvn verify` fails on unformatted code — run `./mvnw spotless:apply` to fix.
@@ -382,4 +384,6 @@ The target platform resolves against the DBeaver release update site
   and posts a PR comment with the download link and install steps — the downloaded zip can
   be selected directly in *Install New Software → Add… → Archive…*.
 - **nightly.yml** — every night (and on demand) builds DBeaver **main** from source and compiles
-  this plugin against it, catching upstream API breakage early.
+  this plugin against it, catching upstream API breakage early. It runs on JDK 25, because DBeaver
+  builds for Java 25 since 26.3, and resolves the target platform for Java 25
+  (`-Dexportnow.ee=JavaSE-25`); the plugin itself still targets Java 21.
