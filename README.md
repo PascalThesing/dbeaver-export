@@ -297,6 +297,15 @@ exports keep running.
   in *Window → Preferences → User Interface → Notifications*; the error dialog and the logs are
   not affected by that.
 
+**The line turns from purple to normal after a few seconds?** That is only DBeaver's second,
+slower highlighting pass recolouring the JSON; the command still works in both states.
+
+**Export works once, then no more?** Check where the cursor is when you press *Ctrl+Enter*. In the
+classic form (JSON alone on its line, query below) *Ctrl+Enter* exports only with the cursor on
+the `@exportnow` line — with the cursor on the query (or after it) DBeaver runs just that query
+and never calls the plugin. Put the cursor on the `@exportnow` line, select both lines, use
+*Alt+X*, or write the query on the same line as the JSON (inline form).
+
 **Nothing happens at all?** Every execution of an `@exportnow` writes
 `@exportnow: command executed, scanning …` to `dbeaver-debug.log`, then one line per block and
 the number of exports started. If that first line is missing, DBeaver did not recognize the
